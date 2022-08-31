@@ -1,58 +1,65 @@
 package com.ascherbakoff.ai3.lock;
 
 import java.util.ArrayList;
-import java.util.Iterator;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Map.Entry;
 import java.util.UUID;
 
 public class Lock {
     /** Owners. */
-    List<Locker> owners = new ArrayList<>();
+    Map<UUID, Locker> owners = new HashMap<>();
 
     /** Waiters. */
     List<Locker> waiters = new ArrayList<>();
 
-    List<Locker> owners() {
-        assert !owners.isEmpty();
+    /**
+     * @param locker
+     * @return True if a locker is compatible with all owners.
+     */
+    private boolean compatible(Locker locker) {
+        for (Entry<UUID, Locker> e : owners.entrySet()) {
+            if (e.getKey().equals(locker.id))
+                continue;
 
-        return owners;
+            if (!e.getValue().mode.compatible(locker.mode))
+                return false;
+        }
+
+        return true;
     }
 
     public synchronized Locker acquire(UUID lockerId, LockMode mode) {
         Locker locker = new Locker(lockerId, mode);
 
-        // TODO FIXME linear complexity, use Map ?
-        for (Locker owner : owners) {
-            if (owner.id == locker.id) {
-                // Calculate a supremum.
-                locker.mode = LockTable.UPGRADE_MATRIX[owner.mode.ordinal()][locker.mode.ordinal()];
+        Locker owner = owners.get(lockerId);
 
-                // Check if a held lock is stronger or same as requested.
-                if (owner.mode.ordinal() >= locker.mode.ordinal() ||  // Allow reenter
-                        owners.size() == 1 // Allow immediate upgrade
-                ) {
-                    owner.mode = locker.mode; // Overwrite locked mode.
-                    return owner;
-                } else {
-                    waiters.add(locker);
-                    return locker;
-                }
-            }
-        }
+        if (owner != null) {
+            // Get a supremum.
+            locker.mode = LockTable.UPGRADE_MATRIX[owner.mode.ordinal()][locker.mode.ordinal()];
 
-        for (Locker owner : owners) {
-            assert owner.id != locker.id;
-
-            if (!owner.mode.compatible(locker.mode)) {
+            // Check if a held lock is stronger or same as requested.
+            if (owner.mode.ordinal() >= locker.mode.ordinal() ||  // Allow reenter
+                    compatible(locker) // Allow immediate upgrade
+            ) {
+                owner.mode = locker.mode; // Overwrite locked mode.
+                return owner;
+            } else {
                 waiters.add(locker);
-
                 return locker;
             }
         }
 
+        if (!compatible(locker)) {
+            waiters.add(locker);
+
+            return locker;
+        }
+
         // All owners are compatible.
         locker.complete(null);
-        owners.add(locker);
+        owners.put(lockerId, locker);
 
         return locker;
     }
@@ -62,23 +69,18 @@ public class Lock {
     }
 
     public synchronized void release(Locker locker) throws RuntimeException {
-        Iterator<Locker> it = owners.iterator();
+        Locker removed = owners.remove(locker.id);
 
-        // TODO FIXME linear - bad
-        while (it.hasNext()) {
-            Locker owner = it.next();
-
-            if (owner.id == locker.id)
-                it.remove();
-        }
+        if (removed == null)
+            throw new RuntimeException("Bad locker");
 
         // Handle delayed upgrade/reenter
         if (owners.size() == 1 && !waiters.isEmpty()) {
-            Locker o = owners.get(0);
             Locker w = waiters.get(0);
+            Locker o = owners.get(w.id);
 
-            if (o.id == w.id) {
-                // Calculate a supremum.
+            if (o != null) {
+                // Get a supremum.
                 w.mode = LockTable.UPGRADE_MATRIX[o.mode.ordinal()][w.mode.ordinal()];
 
                 owners.clear();
@@ -89,7 +91,7 @@ public class Lock {
             Locker w0 = waiters.remove(0);
 
             w0.complete(null);
-            owners.add(w0);
+            owners.put(w0.id, w0);
         }
     }
 }

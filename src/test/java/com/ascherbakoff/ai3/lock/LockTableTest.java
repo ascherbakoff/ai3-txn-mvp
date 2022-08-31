@@ -27,7 +27,6 @@ public class LockTableTest {
 
         Locker l1 = lock.acquire(id1, lockMode);
         l1.join();
-
         assertTrue(l1.id == id1 && l1.mode == lockMode);
 
         lock.release(l1);
@@ -57,20 +56,21 @@ public class LockTableTest {
         assertTrue(l1.id == id1 && l1.mode == lockMode);
 
         Locker l2 = lock.acquire(id2, lockMode);
-
         assertFalse(l2.isDone());
+
         assertTrue(lock.owners.size() == 1);
         assertFalse(lock.waiters.isEmpty());
 
         lock.release(l1);
         l2.join();
         assertTrue(l2.id == id2 && l2.mode == lockMode);
-
         assertTrue(l2.isDone());
+
         assertTrue(lock.owners.size() == 1);
         assertTrue(lock.waiters.isEmpty());
 
         lock.release(l2);
+
         assertTrue(lock.owners.isEmpty());
         assertTrue(lock.waiters.isEmpty());
     }
@@ -132,11 +132,6 @@ public class LockTableTest {
         assertTrue(lock.owners.isEmpty());
     }
 
-    @Test
-    public void testInvalidRelease() {
-        // TODO
-    }
-
     /**
      * Tests direct upgrade S_lock, X_lock for the same locker.
      *
@@ -154,15 +149,12 @@ public class LockTableTest {
 
         Locker l2 = lock.acquire(id1, LockMode.X);
         l2.get(5, TimeUnit.SECONDS);
-
         assertTrue(l2.id == id1 && l2.mode == LockMode.X);
 
         assertTrue(lock.owners.size() == 1);
         assertTrue(lock.waiters.isEmpty());
 
-        //assertThrows(Exception.class, () -> lock.release(l1), "Illegal lock type for release");
-
-        lock.release(l2); // We hold X lock
+        lock.release(l2);
 
         assertTrue(lock.owners.isEmpty());
         assertTrue(lock.waiters.isEmpty());
@@ -170,11 +162,9 @@ public class LockTableTest {
 
     /**
      * Tests direct upgrade IS_lock, IX_lock, X_lock for the same locker.
-     *
-     * @throws Exception
      */
     @Test
-    public void testDirectUpgradeMulti() throws Exception {
+    public void testDirectUpgradeMulti() {
         Lock lock = lockTable.getOrAddEntry(0);
 
         UUID id1 = UUID.randomUUID();
@@ -188,7 +178,7 @@ public class LockTableTest {
         assertTrue(l2.id == id1 && l2.mode == LockMode.IX);
 
         Locker l3 = lock.acquire(id1, LockMode.X);
-        l3.get(5, TimeUnit.SECONDS);
+        l3.join();
         assertTrue(l3.id == id1 && l3.mode == LockMode.X);
 
         assertTrue(lock.owners.size() == 1);
@@ -201,10 +191,12 @@ public class LockTableTest {
     }
 
     /**
-     * Tests delayed upgrade S_lock(1), S_lock(2), X_lock(2), S_unlock(1) for two lockers.
+     * Tests if an upgrade is blocked by conflicting lock.
+     *
+     * The lock sequence is S_lock(1), S_lock(2), X_lock(2), S_unlock(1) for two lockers.
      */
     @Test
-    public void testDelayedUpgrade() {
+    public void testBlockedUpgrade() {
         Lock lock = lockTable.getOrAddEntry(0);
 
         UUID id1 = UUID.randomUUID();
@@ -214,24 +206,26 @@ public class LockTableTest {
         l1.join();
         assertTrue(l1.id == id1 && l1.mode == LockMode.S);
 
-        Locker l1_1 = lock.acquire(id2, LockMode.S);
-        l1_1.join();
-        assertTrue(l1_1.id == id2 && l1.mode == LockMode.S);
+        Locker l2_1 = lock.acquire(id2, LockMode.S);
+        l2_1.join();
+        assertTrue(l2_1.id == id2 && l2_1.mode == LockMode.S);
 
-        Locker l1_2 = lock.acquire(id2, LockMode.X);
-        assertFalse(l1_2.isDone());
+        Locker l2_2 = lock.acquire(id2, LockMode.X);
+        assertFalse(l2_2.isDone());
 
         lock.release(l1);
-        l1_2.join();
+        l2_2.join();
 
-        assertTrue(l1_2.id == id2 && l1_2.mode == LockMode.X);
+        assertTrue(l2_2.id == id2 && l2_2.mode == LockMode.X);
 
         assertTrue(lock.owners.size() == 1);
         assertTrue(lock.waiters.isEmpty());
     }
 
     /**
-     * Tests delayed upgrade IS_lock(1), IS_lock(2), IX_lock(2), IX_lock(1) for two lockers.
+     * Tests direct upgrade of compatible locks.
+     *
+     * The lock sequence is IS_lock(1), IS_lock(2), IX_lock(2), IX_lock(1) for two lockers.
      */
     @Test
     public void testDirectUpgradeCompatible() {
@@ -261,7 +255,9 @@ public class LockTableTest {
     }
 
     /**
-     * Tests delayed upgrade IS_lock(1), IS_lock(2), IX_lock(2), X_lock(2), IS_unlock(1) for two lockers.
+     * Tests if an upgrade is blocked by conflicting lock.
+     *
+     * The lock sequence is IS_lock(1), IS_lock(2), IX_lock(2), X_lock(2), IS_unlock(1) for two lockers.
      */
     @Test
     public void testDelayedUpgradeCompatible() {
@@ -296,6 +292,11 @@ public class LockTableTest {
 
     @Test
     public void testDowngrade() {
+        // TODO
+    }
 
+    @Test
+    public void testInvalidRelease() {
+        // TODO
     }
 }

@@ -28,12 +28,4 @@ public class LockTable {
     public Lock getOrAddEntry(Object key) {
         return table.computeIfAbsent(key, k -> new Lock());
     }
-
-    public void removeEntry(Object key, Lock lock) {
-        synchronized (lock) {
-            if (lock.waiters.isEmpty()) {
-                table.remove(key);
-            }
-        }
-    }
 }
