@@ -312,9 +312,9 @@ public class LockTableTest {
 
         UUID id1 = UUID.randomUUID();
 
-        Locker l1 = lock.acquire(id1, LockMode.SIX);
+        Locker l1 = lock.acquire(id1, LockMode.X);
         l1.join();
-        assertTrue(l1.id == id1 && l1.mode == LockMode.SIX);
+        assertTrue(l1.id == id1 && l1.mode == LockMode.X);
 
         Locker l2 = lock.downgrade(id1, lockMode);
         assertTrue(l2.isDone());
