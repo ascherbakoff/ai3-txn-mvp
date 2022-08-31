@@ -4,16 +4,25 @@ import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 
 public class Locker extends CompletableFuture<Void> {
-    final UUID lockerId;
+    final UUID id;
 
     LockMode mode;
 
     /**
-     * @param lockerId Locker id.
+     * @param id Locker id.
      * @param mode Requested mode.
      */
-    public Locker(UUID lockerId, LockMode mode) {
-        this.lockerId = lockerId;
+    public Locker(UUID id, LockMode mode) {
+        this.id = id;
         this.mode = mode;
+    }
+
+    @Override
+    public String toString() {
+        return "Locker{" +
+                "id=" + id +
+                ", mode=" + mode +
+                ", done=" + isDone() +
+                '}';
     }
 }

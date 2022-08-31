@@ -1,6 +1,7 @@
 package com.ascherbakoff.ai3.lock;
 
 import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.List;
 import java.util.UUID;
 
@@ -20,53 +21,69 @@ public class Lock {
     public synchronized Locker acquire(UUID lockerId, LockMode mode) {
         Locker locker = new Locker(lockerId, mode);
 
-        switch (test(locker)) {
-            case 0: // Can lock immediately - requested lock is compatible with all held locks.
-                locker.complete(null);
-                owners.add(locker);
+        // TODO FIXME linear complexity, use Map ?
+        for (Locker owner : owners) {
+            if (owner.id == locker.id) {
+                // Calculate a supremum.
+                locker.mode = LockTable.UPGRADE_MATRIX[owner.mode.ordinal()][locker.mode.ordinal()];
 
-                break;
-            case 1: // Reenter or upgrade
-                locker.complete(null);
-
-                break;
-            default: // Wait
-                waiters.add(locker);
+                // Check if a held lock is stronger or same as requested.
+                if (owner.mode.ordinal() >= locker.mode.ordinal() ||  // Allow reenter
+                        owners.size() == 1 // Allow immediate upgrade
+                ) {
+                    owner.mode = locker.mode; // Overwrite locked mode.
+                    return owner;
+                } else {
+                    waiters.add(locker);
+                    return locker;
+                }
+            }
         }
+
+        for (Locker owner : owners) {
+            assert owner.id != locker.id;
+
+            if (!owner.mode.compatible(locker.mode)) {
+                waiters.add(locker);
+
+                return locker;
+            }
+        }
+
+        // All owners are compatible.
+        locker.complete(null);
+        owners.add(locker);
 
         return locker;
     }
 
-    private int test(Locker locker) {
-        for (Locker owner : owners) {
-            boolean compat = owner.mode.compatible(locker.mode);
-
-            // TODO FIXME map can be used for upgrade check
-            if (owner.lockerId == locker.lockerId) {
-                if (owner.mode.ordinal() >= locker.mode.ordinal() ||  // Allow reenter
-                        owners.size() == 1 // Allow upgrade
-                ) {
-                    locker.mode = owner.mode;
-
-                    return 1;
-                } else {
-                    return 2;
-                }
-            } else if (!compat)
-                return 2;
-        }
-
-        return 0;
-    }
-
-    public synchronized void downgrade(LockMode mode) {
+    public synchronized void downgrade(Locker locker, LockMode mode) {
 
     }
 
     public synchronized void release(Locker locker) throws RuntimeException {
-        assert owners.contains(locker);
+        Iterator<Locker> it = owners.iterator();
 
-        owners.remove(locker);
+        // TODO FIXME linear - bad
+        while (it.hasNext()) {
+            Locker owner = it.next();
+
+            if (owner.id == locker.id)
+                it.remove();
+        }
+
+        // Handle delayed upgrade/reenter
+        if (owners.size() == 1 && !waiters.isEmpty()) {
+            Locker o = owners.get(0);
+            Locker w = waiters.get(0);
+
+            if (o.id == w.id) {
+                // Calculate a supremum.
+                w.mode = LockTable.UPGRADE_MATRIX[o.mode.ordinal()][w.mode.ordinal()];
+
+                owners.clear();
+            }
+        }
 
         if (owners.isEmpty() && !waiters.isEmpty()) {
             Locker w0 = waiters.remove(0);

@@ -1,15 +1,22 @@
 package com.ascherbakoff.ai3.lock;
 
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.function.BiFunction;
 
 public class LockTable {
-    public static final boolean[][] MATRIX = {
+    protected static final boolean[][] COMPAT_MATRIX = {
             {true, true, true, true, false},
             {true, true, false, false, false},
             {true, false, true, false, false},
             {true, false, false, false, false},
             {false, false, false, false, false},
+    };
+
+    protected static final LockMode[][] UPGRADE_MATRIX = {
+            {LockMode.IS, LockMode.IX, LockMode.S, LockMode.SIX, LockMode.X},
+            {LockMode.IX, LockMode.IX, LockMode.SIX, LockMode.SIX, LockMode.X},
+            {LockMode.S, LockMode.SIX, LockMode.S, LockMode.SIX, LockMode.X},
+            {LockMode.SIX, LockMode.SIX, LockMode.SIX, LockMode.SIX, LockMode.X},
+            {LockMode.X, LockMode.X, LockMode.X, LockMode.X, LockMode.X},
     };
 
     protected final ConcurrentHashMap<Object, Lock> table;
@@ -24,8 +31,9 @@ public class LockTable {
 
     public void removeEntry(Object key, Lock lock) {
         synchronized (lock) {
-            if (lock.waiters.isEmpty())
+            if (lock.waiters.isEmpty()) {
                 table.remove(key);
+            }
         }
     }
 }

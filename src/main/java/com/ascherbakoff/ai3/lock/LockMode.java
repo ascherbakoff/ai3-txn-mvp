@@ -4,6 +4,6 @@ public enum LockMode {
     IS, IX, S, SIX, X;
 
     public boolean compatible(LockMode mode) {
-        return LockTable.MATRIX[ordinal()][mode.ordinal()];
+        return LockTable.COMPAT_MATRIX[ordinal()][mode.ordinal()];
     }
 }

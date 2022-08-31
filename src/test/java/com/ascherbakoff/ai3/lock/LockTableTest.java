@@ -1,13 +1,10 @@
 package com.ascherbakoff.ai3.lock;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
@@ -31,7 +28,7 @@ public class LockTableTest {
         Locker l1 = lock.acquire(id1, lockMode);
         l1.join();
 
-        assertTrue(l1.lockerId == id1 && l1.mode == lockMode);
+        assertTrue(l1.id == id1 && l1.mode == lockMode);
 
         lock.release(l1);
 
@@ -39,6 +36,11 @@ public class LockTableTest {
         assertTrue(lock.waiters.isEmpty());
     }
 
+    /**
+     * Tests that incompatible locks can't be acquired in the same time by different lockers.
+     *
+     * @param lockMode
+     */
     @ParameterizedTest
     @EnumSource(LockMode.class)
     public void testLockLockUnlockUnlockIncompatible(LockMode lockMode) {
@@ -52,7 +54,7 @@ public class LockTableTest {
 
         Locker l1 = lock.acquire(id1, lockMode);
         l1.join();
-        assertTrue(l1.lockerId == id1 && l1.mode == lockMode);
+        assertTrue(l1.id == id1 && l1.mode == lockMode);
 
         Locker l2 = lock.acquire(id2, lockMode);
 
@@ -62,7 +64,7 @@ public class LockTableTest {
 
         lock.release(l1);
         l2.join();
-        assertTrue(l2.lockerId == id2 && l2.mode == lockMode);
+        assertTrue(l2.id == id2 && l2.mode == lockMode);
 
         assertTrue(l2.isDone());
         assertTrue(lock.owners.size() == 1);
@@ -74,7 +76,7 @@ public class LockTableTest {
     }
 
     /**
-     * Tests if compatible locks can be acquired in the same time.
+     * Tests that compatible locks can be acquired in the same time by different lockers.
      *
      * @param lockMode Lock mode.
      */
@@ -92,7 +94,7 @@ public class LockTableTest {
         Locker l1 = lock.acquire(id1, lockMode);
         l1.join();
 
-        assertTrue(l1.lockerId == id1 && l1.mode == lockMode);
+        assertTrue(l1.id == id1 && l1.mode == lockMode);
 
         Locker l2 = lock.acquire(id2, lockMode);
         l2.join();
@@ -117,11 +119,11 @@ public class LockTableTest {
 
         Locker l1 = lock.acquire(id1, LockMode.X);
         l1.join();
-        assertTrue(l1.lockerId == id1 && l1.mode == LockMode.X);
+        assertTrue(l1.id == id1 && l1.mode == LockMode.X);
 
         Locker l2 = lock.acquire(id1, lockMode);
         l2.join();
-        assertTrue(l2.lockerId == id1 && l2.mode == LockMode.X);
+        assertTrue(l2.id == id1 && l2.mode == LockMode.X);
 
         assertTrue(lock.owners.size() == 1);
         assertTrue(lock.waiters.isEmpty());
@@ -141,7 +143,6 @@ public class LockTableTest {
      * @throws Exception
      */
     @Test
-    @Disabled
     public void testDirectUpgrade() throws Exception {
         Lock lock = lockTable.getOrAddEntry(0);
 
@@ -149,17 +150,17 @@ public class LockTableTest {
 
         Locker l1 = lock.acquire(id1, LockMode.S);
         l1.join();
-        assertTrue(l1.lockerId == id1 && l1.mode == LockMode.S);
+        assertTrue(l1.id == id1 && l1.mode == LockMode.S);
 
         Locker l2 = lock.acquire(id1, LockMode.X);
         l2.get(5, TimeUnit.SECONDS);
 
-        assertTrue(l2.lockerId == id1 && l2.mode == LockMode.X);
+        assertTrue(l2.id == id1 && l2.mode == LockMode.X);
 
         assertTrue(lock.owners.size() == 1);
         assertTrue(lock.waiters.isEmpty());
 
-        assertThrows(Exception.class, () -> lock.release(l1), "Illegal lock type for release");
+        //assertThrows(Exception.class, () -> lock.release(l1), "Illegal lock type for release");
 
         lock.release(l2); // We hold X lock
 
@@ -173,7 +174,6 @@ public class LockTableTest {
      * @throws Exception
      */
     @Test
-    @Disabled
     public void testDirectUpgradeMulti() throws Exception {
         Lock lock = lockTable.getOrAddEntry(0);
 
@@ -181,21 +181,18 @@ public class LockTableTest {
 
         Locker l1 = lock.acquire(id1, LockMode.IS);
         l1.join();
-        assertTrue(l1.lockerId == id1 && l1.mode == LockMode.IS);
+        assertTrue(l1.id == id1 && l1.mode == LockMode.IS);
 
         Locker l2 = lock.acquire(id1, LockMode.IX);
         l2.join();
-        assertTrue(l2.lockerId == id1 && l2.mode == LockMode.IX);
+        assertTrue(l2.id == id1 && l2.mode == LockMode.IX);
 
         Locker l3 = lock.acquire(id1, LockMode.X);
         l3.get(5, TimeUnit.SECONDS);
-        assertTrue(l3.lockerId == id1 && l3.mode == LockMode.X);
+        assertTrue(l3.id == id1 && l3.mode == LockMode.X);
 
         assertTrue(lock.owners.size() == 1);
         assertTrue(lock.waiters.isEmpty());
-
-        assertThrows(Exception.class, () -> lock.release(l1), "Illegal lock type for release");
-        assertThrows(Exception.class, () -> lock.release(l2), "Illegal lock type for release");
 
         lock.release(l3); // We hold X lock
 
@@ -207,7 +204,6 @@ public class LockTableTest {
      * Tests delayed upgrade S_lock(1), S_lock(2), S_unlock(1), X_lock(2) for two lockers.
      */
     @Test
-    @Disabled
     public void testDelayedUpgrade() {
         Lock lock = lockTable.getOrAddEntry(0);
 
@@ -216,11 +212,11 @@ public class LockTableTest {
 
         Locker l1 = lock.acquire(id1, LockMode.S);
         l1.join();
-        assertTrue(l1.lockerId == id1 && l1.mode == LockMode.S);
+        assertTrue(l1.id == id1 && l1.mode == LockMode.S);
 
         Locker l2 = lock.acquire(id2, LockMode.S);
         l2.join();
-        assertTrue(l2.lockerId == id2 && l1.mode == LockMode.S);
+        assertTrue(l2.id == id2 && l1.mode == LockMode.S);
 
         Locker l3 = lock.acquire(id2, LockMode.X);
         assertFalse(l3.isDone());
@@ -228,18 +224,44 @@ public class LockTableTest {
         lock.release(l1);
         l3.join();
 
-        assertTrue(l3.lockerId == id2 && l3.mode == LockMode.X);
+        assertTrue(l3.id == id2 && l3.mode == LockMode.X);
 
         assertTrue(lock.owners.size() == 1);
         assertTrue(lock.waiters.isEmpty());
     }
 
     /**
-     * Tests delayed upgrade IS_lock(1), IS_lock(2), IX_lock(2), IS_unlock(1), X_lock(2) for two lockers.
+     * Tests delayed upgrade IS_lock(1), IS_lock(2), IX_lock(2), X_lock(2), IS_unlock(1) for two lockers.
      */
     @Test
     public void testDelayedUpgradeMulti() {
-        // TODO
+        Lock lock = lockTable.getOrAddEntry(0);
+
+        UUID id1 = UUID.randomUUID();
+        UUID id2 = UUID.randomUUID();
+
+        Locker l1 = lock.acquire(id1, LockMode.IS);
+        l1.join();
+        assertTrue(l1.id == id1 && l1.mode == LockMode.IS);
+
+        Locker l2 = lock.acquire(id2, LockMode.IS);
+        l2.join();
+        assertTrue(l2.id == id2 && l1.mode == LockMode.IS);
+
+        Locker l3 = lock.acquire(id1, LockMode.IX);
+        l3.join();
+        assertTrue(l3.id == id1 && l3.mode == LockMode.IX);
+
+        Locker l4 = lock.acquire(id2, LockMode.X);
+        assertFalse(l3.isDone());
+
+        lock.release(l1);
+        l4.join();
+
+        assertTrue(l4.id == id2 && l4.mode == LockMode.X);
+
+        assertTrue(lock.owners.size() == 1);
+        assertTrue(lock.waiters.isEmpty());
     }
 
     @Test
