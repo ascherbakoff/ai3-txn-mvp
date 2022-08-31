@@ -19,6 +19,10 @@ public class LockTable {
             {LockMode.X, LockMode.X, LockMode.X, LockMode.X, LockMode.X},
     };
 
+    protected static LockMode supremum(LockMode l1, LockMode l2) {
+        return UPGRADE_MATRIX[l1.ordinal()][l2.ordinal()];
+    }
+
     protected final ConcurrentHashMap<Object, Lock> table;
 
     public LockTable(int size) {

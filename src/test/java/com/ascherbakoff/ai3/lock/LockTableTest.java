@@ -3,8 +3,8 @@ package com.ascherbakoff.ai3.lock;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.EnumSet;
 import java.util.UUID;
-import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
@@ -16,7 +16,7 @@ public class LockTableTest {
     private LockTable lockTable = new LockTable(10);
 
     /**
-     * Tests lock/unlock for all lock modes.
+     * Tests basic lock/unlock for all lock modes.
      */
     @ParameterizedTest
     @EnumSource(LockMode.class)
@@ -110,6 +110,11 @@ public class LockTableTest {
         assertTrue(lock.owners.isEmpty());
     }
 
+    /**
+     * Tests a reenter with all lock modes.
+     *
+     * @param lockMode Lock mode.
+     */
     @ParameterizedTest
     @EnumSource(LockMode.class)
     public void testReenter(LockMode lockMode) {
@@ -133,35 +138,40 @@ public class LockTableTest {
     }
 
     /**
-     * Tests direct upgrade S_lock, X_lock for the same locker.
+     * Tests direct upgrade to the supremum for the same locker.
      *
-     * @throws Exception
+     * @param fromMode Lock mode.
      */
-    @Test
-    public void testDirectUpgrade() throws Exception {
+    @ParameterizedTest
+    @EnumSource(LockMode.class)
+    public void testDirectUpgradeSupremum(LockMode fromMode) {
         Lock lock = lockTable.getOrAddEntry(0);
 
         UUID id1 = UUID.randomUUID();
 
-        Locker l1 = lock.acquire(id1, LockMode.S);
-        l1.join();
-        assertTrue(l1.id == id1 && l1.mode == LockMode.S);
+        EnumSet<LockMode> range = EnumSet.range(fromMode, LockMode.X);
 
-        Locker l2 = lock.acquire(id1, LockMode.X);
-        l2.get(5, TimeUnit.SECONDS);
-        assertTrue(l2.id == id1 && l2.mode == LockMode.X);
+        for (LockMode toMode : range) {
+            Locker l1 = lock.acquire(id1, fromMode);
+            l1.join();
+            assertTrue(l1.id == id1 && l1.mode == fromMode);
 
-        assertTrue(lock.owners.size() == 1);
-        assertTrue(lock.waiters.isEmpty());
+            Locker l2 = lock.acquire(id1, toMode);
+            l2.join();
+            assertTrue(l2.id == id1 && l2.mode == LockTable.supremum(fromMode, toMode));
 
-        lock.release(l2);
+            assertTrue(lock.owners.size() == 1);
+            assertTrue(lock.waiters.isEmpty());
 
-        assertTrue(lock.owners.isEmpty());
-        assertTrue(lock.waiters.isEmpty());
+            lock.release(l2);
+
+            assertTrue(lock.owners.isEmpty());
+            assertTrue(lock.waiters.isEmpty());
+        }
     }
 
     /**
-     * Tests direct upgrade IS_lock, IX_lock, X_lock for the same locker.
+     * Tests direct upgrade IS_lock, IX_lock, X_lock.
      */
     @Test
     public void testDirectUpgradeMulti() {
@@ -191,9 +201,9 @@ public class LockTableTest {
     }
 
     /**
-     * Tests if an upgrade is blocked by conflicting lock.
+     * Tests if a direct upgrade is blocked by conflicting lock.
      *
-     * The lock sequence is S_lock(1), S_lock(2), X_lock(2), S_unlock(1) for two lockers.
+     * The lock sequence is S_lock(1), S_lock(2), X_lock(2), S_unlock(1).
      */
     @Test
     public void testBlockedUpgrade() {
@@ -225,7 +235,7 @@ public class LockTableTest {
     /**
      * Tests direct upgrade of compatible locks.
      *
-     * The lock sequence is IS_lock(1), IS_lock(2), IX_lock(2), IX_lock(1) for two lockers.
+     * The lock sequence is IS_lock(1), IS_lock(2), IX_lock(2), IX_lock(1).
      */
     @Test
     public void testDirectUpgradeCompatible() {
@@ -255,9 +265,9 @@ public class LockTableTest {
     }
 
     /**
-     * Tests if an upgrade is blocked by conflicting lock.
+     * Tests if a direct upgrade is blocked by conflicting lock.
      *
-     * The lock sequence is IS_lock(1), IS_lock(2), IX_lock(2), X_lock(2), IS_unlock(1) for two lockers.
+     * The lock sequence is IS_lock(1), IS_lock(2), IX_lock(2), X_lock(2), IS_unlock(1).
      */
     @Test
     public void testDelayedUpgradeCompatible() {

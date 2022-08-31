@@ -37,7 +37,7 @@ public class Lock {
 
         if (owner != null) {
             // Get a supremum.
-            locker.mode = LockTable.UPGRADE_MATRIX[owner.mode.ordinal()][locker.mode.ordinal()];
+            locker.mode = LockTable.supremum(owner.mode, locker.mode);
 
             // Check if a held lock is stronger or same as requested.
             if (owner.mode.ordinal() >= locker.mode.ordinal() ||  // Allow reenter
@@ -81,7 +81,7 @@ public class Lock {
 
             if (o != null) {
                 // Get a supremum.
-                w.mode = LockTable.UPGRADE_MATRIX[o.mode.ordinal()][w.mode.ordinal()];
+                w.mode = LockTable.supremum(o.mode, w.mode);
 
                 owners.clear();
             }
