@@ -201,7 +201,7 @@ public class LockTableTest {
     }
 
     /**
-     * Tests delayed upgrade S_lock(1), S_lock(2), S_unlock(1), X_lock(2) for two lockers.
+     * Tests delayed upgrade S_lock(1), S_lock(2), X_lock(2), S_unlock(1) for two lockers.
      */
     @Test
     public void testDelayedUpgrade() {
@@ -214,19 +214,49 @@ public class LockTableTest {
         l1.join();
         assertTrue(l1.id == id1 && l1.mode == LockMode.S);
 
-        Locker l2 = lock.acquire(id2, LockMode.S);
-        l2.join();
-        assertTrue(l2.id == id2 && l1.mode == LockMode.S);
+        Locker l1_1 = lock.acquire(id2, LockMode.S);
+        l1_1.join();
+        assertTrue(l1_1.id == id2 && l1.mode == LockMode.S);
 
-        Locker l3 = lock.acquire(id2, LockMode.X);
-        assertFalse(l3.isDone());
+        Locker l1_2 = lock.acquire(id2, LockMode.X);
+        assertFalse(l1_2.isDone());
 
         lock.release(l1);
-        l3.join();
+        l1_2.join();
 
-        assertTrue(l3.id == id2 && l3.mode == LockMode.X);
+        assertTrue(l1_2.id == id2 && l1_2.mode == LockMode.X);
 
         assertTrue(lock.owners.size() == 1);
+        assertTrue(lock.waiters.isEmpty());
+    }
+
+    /**
+     * Tests delayed upgrade IS_lock(1), IS_lock(2), IX_lock(2), IX_lock(1) for two lockers.
+     */
+    @Test
+    public void testDirectUpgradeCompatible() {
+        Lock lock = lockTable.getOrAddEntry(0);
+
+        UUID id1 = UUID.randomUUID();
+        UUID id2 = UUID.randomUUID();
+
+        Locker l1_1 = lock.acquire(id1, LockMode.IS);
+        l1_1.join();
+        assertTrue(l1_1.id == id1 && l1_1.mode == LockMode.IS);
+
+        Locker l2_1 = lock.acquire(id2, LockMode.IS);
+        l2_1.join();
+        assertTrue(l2_1.id == id2 && l1_1.mode == LockMode.IS);
+
+        Locker l2_2 = lock.acquire(id2, LockMode.IX);
+        l2_2.join();
+        assertTrue(l2_2.id == id2 && l2_2.mode == LockMode.IX);
+
+        Locker l1_2 = lock.acquire(id1, LockMode.IX);
+        l1_2.join();
+        assertTrue(l1_2.id == id1 && l1_2.mode == LockMode.IX);
+
+        assertTrue(lock.owners.size() == 2);
         assertTrue(lock.waiters.isEmpty());
     }
 
@@ -234,31 +264,31 @@ public class LockTableTest {
      * Tests delayed upgrade IS_lock(1), IS_lock(2), IX_lock(2), X_lock(2), IS_unlock(1) for two lockers.
      */
     @Test
-    public void testDelayedUpgradeMulti() {
+    public void testDelayedUpgradeCompatible() {
         Lock lock = lockTable.getOrAddEntry(0);
 
         UUID id1 = UUID.randomUUID();
         UUID id2 = UUID.randomUUID();
 
-        Locker l1 = lock.acquire(id1, LockMode.IS);
-        l1.join();
-        assertTrue(l1.id == id1 && l1.mode == LockMode.IS);
+        Locker l1_1 = lock.acquire(id1, LockMode.IS);
+        l1_1.join();
+        assertTrue(l1_1.id == id1 && l1_1.mode == LockMode.IS);
 
-        Locker l2 = lock.acquire(id2, LockMode.IS);
-        l2.join();
-        assertTrue(l2.id == id2 && l1.mode == LockMode.IS);
+        Locker l2_1 = lock.acquire(id2, LockMode.IS);
+        l2_1.join();
+        assertTrue(l2_1.id == id2 && l1_1.mode == LockMode.IS);
 
-        Locker l3 = lock.acquire(id1, LockMode.IX);
-        l3.join();
-        assertTrue(l3.id == id1 && l3.mode == LockMode.IX);
+        Locker l2_2 = lock.acquire(id2, LockMode.IX);
+        l2_2.join();
+        assertTrue(l2_2.id == id2 && l2_2.mode == LockMode.IX);
 
-        Locker l4 = lock.acquire(id2, LockMode.X);
-        assertFalse(l3.isDone());
+        Locker l2_3 = lock.acquire(id2, LockMode.X);
+        assertFalse(l2_3.isDone());
 
-        lock.release(l1);
-        l4.join();
+        lock.release(l1_1);
+        l2_3.join();
 
-        assertTrue(l4.id == id2 && l4.mode == LockMode.X);
+        assertTrue(l2_3.id == id2 && l2_3.mode == LockMode.X);
 
         assertTrue(lock.owners.size() == 1);
         assertTrue(lock.waiters.isEmpty());
