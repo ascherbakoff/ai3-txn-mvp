@@ -300,9 +300,31 @@ public class LockTableTest {
         assertTrue(lock.waiters.isEmpty());
     }
 
-    @Test
-    public void testDowngrade() {
-        // TODO
+    /**
+     * Tests a downgrade to all lock modes.
+     *
+     * @param lockMode Lock mode.
+     */
+    @ParameterizedTest
+    @EnumSource(LockMode.class)
+    public void testDowngrade(LockMode lockMode) {
+        Lock lock = lockTable.getOrAddEntry(0);
+
+        UUID id1 = UUID.randomUUID();
+
+        Locker l1 = lock.acquire(id1, LockMode.SIX);
+        l1.join();
+        assertTrue(l1.id == id1 && l1.mode == LockMode.SIX);
+
+        Locker l2 = lock.downgrade(id1, lockMode);
+        assertTrue(l2.isDone());
+        assertTrue(l2.id == id1 && l2.mode == lockMode);
+
+        assertTrue(lock.owners.size() == 1);
+        assertTrue(lock.waiters.isEmpty());
+
+        lock.release(l2);
+        assertTrue(lock.owners.isEmpty());
     }
 
     @Test

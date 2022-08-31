@@ -64,8 +64,18 @@ public class Lock {
         return locker;
     }
 
-    public synchronized void downgrade(Locker locker, LockMode mode) {
+    public synchronized Locker downgrade(UUID lockerId, LockMode mode) {
+        Locker locker = owners.get(lockerId);
 
+        if (locker == null)
+            throw new RuntimeException("Bad locker");
+
+        if (locker.mode.ordinal() < mode.ordinal())
+            throw new RuntimeException("Bad downgrade mode " + locker.mode + " -> " + mode);
+
+        locker.mode = mode;
+
+        return locker;
     }
 
     public synchronized void release(Locker locker) throws RuntimeException {
