@@ -13,7 +13,7 @@ import org.junit.jupiter.params.provider.EnumSource;
  *
  */
 public class LockTableTest {
-    private LockTable lockTable = new LockTable(10);
+    private LockTable lockTable = new LockTable(10, true, DeadlockPrevention.none());
 
     /**
      * Tests basic lock/unlock for all lock modes.

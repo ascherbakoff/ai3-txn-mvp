@@ -14,6 +14,18 @@ public class Lock {
     /** Waiters. */
     List<Locker> waiters = new ArrayList<>();
 
+    /** Max version for deadlock prevention. */
+    UUID maxVersion;
+
+    private boolean fair;
+
+    private DeadlockPrevention prevention;
+
+    public Lock(boolean fair, DeadlockPrevention prevention) {
+        this.fair = false;
+        this.prevention = prevention;
+    }
+
     /**
      * @param locker
      * @return True if a locker is compatible with all owners.
@@ -30,7 +42,7 @@ public class Lock {
         return true;
     }
 
-    public synchronized Locker acquire(UUID lockerId, LockMode mode) {
+    public synchronized Locker acquire(UUID lockerId, LockMode mode) throws LockException {
         Locker locker = new Locker(lockerId, mode);
 
         Locker owner = owners.get(lockerId);
@@ -46,12 +58,18 @@ public class Lock {
                 owner.mode = locker.mode; // Overwrite locked mode.
                 return owner;
             } else {
+                if (prevention.forceOrder && maxVersion != null && maxVersion.compareTo(lockerId) < 0)
+                    throw new LockException("Invalid lock order " + maxVersion + " -> " + lockerId);
+
                 waiters.add(locker);
                 return locker;
             }
         }
 
         if (!compatible(locker)) {
+            if (prevention.forceOrder && maxVersion != null && maxVersion.compareTo(lockerId) < 0)
+                throw new LockException("Invalid lock order " + maxVersion + " -> " + lockerId);
+
             waiters.add(locker);
 
             return locker;
@@ -61,6 +79,9 @@ public class Lock {
         locker.complete(null);
         owners.put(lockerId, locker);
 
+        if (maxVersion == null || lockerId.compareTo(maxVersion) < 0)
+            maxVersion = lockerId;
+
         return locker;
     }
 
@@ -68,21 +89,21 @@ public class Lock {
         Locker locker = owners.get(lockerId);
 
         if (locker == null)
-            throw new RuntimeException("Bad locker");
+            throw new LockException("Bad locker");
 
         if (locker.mode.ordinal() < mode.ordinal())
-            throw new RuntimeException("Bad downgrade mode " + locker.mode + " -> " + mode);
+            throw new LockException("Bad downgrade mode " + locker.mode + " -> " + mode);
 
         locker.mode = mode;
 
         return locker;
     }
 
-    public synchronized void release(Locker locker) throws RuntimeException {
+    public synchronized void release(Locker locker) throws LockException {
         Locker removed = owners.remove(locker.id);
 
         if (removed == null)
-            throw new RuntimeException("Bad locker");
+            throw new LockException("Bad locker");
 
         // Handle delayed upgrade/reenter
         if (owners.size() == 1 && !waiters.isEmpty()) {
