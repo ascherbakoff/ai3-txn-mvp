@@ -1,6 +1,6 @@
 package com.ascherbakoff.ai3.lock;
 
-public class DeadlockPrevention {
+public final class DeadlockPrevention {
     boolean forceOrder;
 
     private DeadlockPrevention() {
