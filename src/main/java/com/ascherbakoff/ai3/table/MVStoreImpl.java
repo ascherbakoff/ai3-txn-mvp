@@ -4,8 +4,6 @@ import com.ascherbakoff.ai3.clock.Timestamp;
 import com.ascherbakoff.ai3.lock.LockTable;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
-import java.util.function.Predicate;
-import org.jetbrains.annotations.Nullable;
 
 public class MVStoreImpl implements MVStore {
     private LockTable lockTable;
@@ -25,12 +23,12 @@ public class MVStoreImpl implements MVStore {
     }
 
     @Override
-    public Cursor<Tuple> scan(String idxName, @Nullable Predicate<Tuple> filter, UUID txId) {
+    public Cursor<Tuple> query(Query query, UUID txId) {
         return null;
     }
 
     @Override
-    public Cursor<Tuple> scan(String idxName, @Nullable Predicate<Tuple> filter, Timestamp readTs) {
+    public Cursor<Tuple> query(Query query, Timestamp readTs) {
         return null;
     }
 

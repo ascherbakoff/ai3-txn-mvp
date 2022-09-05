@@ -23,14 +23,8 @@ class VersionChainRowStore<T> implements RowStore<VersionChain<T>, T> {
 
     @Nullable
     @Override
-    public T get(VersionChain<T> rowId, @Nullable Timestamp timestamp, Predicate<T> filter) {
+    public T get(VersionChain<T> rowId, @Nullable Timestamp timestamp, @Nullable Predicate<T> filter) {
         return rowId.resolve(timestamp, filter);
-    }
-
-    @Nullable
-    @Override
-    public T getForUpdate(VersionChain<T> rowId, UUID txId, Predicate<T> filter) {
-        return rowId.resolve(null, filter);
     }
 
     @Override
@@ -41,7 +35,7 @@ class VersionChainRowStore<T> implements RowStore<VersionChain<T>, T> {
     }
 
     @Override
-    public void update(VersionChain<T> rowId, T newRow, UUID txId) {
+    public void update(VersionChain<T> rowId, @Nullable T newRow, UUID txId) {
         rowId.addWrite(newRow, txId);
     }
 

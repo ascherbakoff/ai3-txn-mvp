@@ -5,15 +5,15 @@ import org.jetbrains.annotations.NotNull;
 
 public class Timestamp implements Comparable<Timestamp> {
     private static AtomicLong seq = new AtomicLong();
-    private final long ts;
+    private final long counter;
 
-    Timestamp(long ts) {
-        this.ts = ts;
+    Timestamp(long counter) {
+        this.counter = counter;
     }
 
     @Override
     public int compareTo(@NotNull Timestamp o) {
-        return Long.compare(ts, o.ts);
+        return Long.compare(counter, o.counter);
     }
 
     public static Timestamp now() {
