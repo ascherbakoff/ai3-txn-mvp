@@ -25,6 +25,8 @@ public interface Tuple {
 
     void set(int index, Object value);
 
+    Tuple fields(int... indexes);
+
     public static Tuple create(Object... values) {
         return new TupleImpl(values);
     }

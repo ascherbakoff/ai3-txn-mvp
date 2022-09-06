@@ -39,4 +39,8 @@ public class LockTable {
     public Lock getOrAddEntry(Object key) {
         return table.computeIfAbsent(key, k -> new Lock(fair, prevention));
     }
+
+    public void releaseEntryOptimistically(Object key, Lock lock) {
+        // TODO
+    }
 }

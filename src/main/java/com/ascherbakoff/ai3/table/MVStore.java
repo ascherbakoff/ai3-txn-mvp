@@ -14,7 +14,7 @@ public interface MVStore {
     CompletableFuture<Tuple> remove(Tuple keyTuple, UUID txId);
 
     // Run query in RW mode.
-    Cursor<Tuple> query(Query query, UUID txId);
+    AsyncCursor<Tuple> query(Query query, UUID txId);
 
     // Run query in RO mode.
     Cursor<Tuple> query(Query query, Timestamp readTs);

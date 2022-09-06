@@ -6,6 +6,7 @@ import java.util.function.Predicate;
 import org.jetbrains.annotations.Nullable;
 
 interface RowStore<RowID, T> {
+    // TODO do we need 3 arg ?
     T get(RowID rowId, UUID txId, @Nullable Predicate<T> filter);
     T get(RowID rowId, @Nullable Timestamp timestamp, @Nullable Predicate<T> filter);
     RowID insert(T newRow, UUID txId);

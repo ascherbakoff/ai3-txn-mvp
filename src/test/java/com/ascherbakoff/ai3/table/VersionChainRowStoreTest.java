@@ -121,6 +121,7 @@ public class VersionChainRowStoreTest {
 
         assertEquals(null, store.get(rowId, (Timestamp) null, null));
         assertEquals(null, store.get(rowId, commitTs5, null));
+        assertTrue(store.scan(commitTs5).getAll().isEmpty());
         assertEquals(t4, store.scan(commitTs4).getAll().get(0));
         assertEquals(t2, store.get(rowId, commitTs3, null));
         assertEquals(t2, store.scan(commitTs3).getAll().get(0));
