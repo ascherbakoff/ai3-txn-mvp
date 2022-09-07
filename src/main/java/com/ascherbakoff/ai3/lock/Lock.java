@@ -100,7 +100,11 @@ public class Lock {
     }
 
     public synchronized void release(Locker locker) throws LockException {
-        Locker removed = owners.remove(locker.id);
+        release(locker.id);
+    }
+
+    public synchronized void release(UUID id) throws LockException {
+        Locker removed = owners.remove(id);
 
         if (removed == null)
             throw new LockException("Bad locker");

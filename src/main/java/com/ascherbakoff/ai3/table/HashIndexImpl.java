@@ -6,6 +6,7 @@ import java.util.Iterator;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import java.util.function.BiFunction;
 
 /**
  *
@@ -30,23 +31,45 @@ class HashIndexImpl<T> implements HashIndex<T> {
 
     @Override
     public boolean insert(Tuple key, T rowId) {
-        // Must validate uniquess before insert.
-        if (unique) {
-            Set<T> values = data.get(key);
+        try {
+            data.compute(key, new BiFunction<Tuple, Set<T>, Set<T>>() {
+                @Override
+                public Set<T> apply(Tuple tuple, Set<T> ts) {
+                    if (unique) {
+                        if (ts != null && !ts.contains(rowId))
+                            throw new RuntimeException("Unique violation " + tuple);
+                    }
 
-            if (values != null && !values.contains(rowId))
-                return false;
+                    if (ts == null)
+                        ts = new HashSet<>();
+
+                    ts.add(rowId);
+
+                    return ts;
+                }
+            });
+        } catch (Exception e) {
+            return false;
         }
-
-        data.computeIfAbsent(key, k -> new HashSet<>()).add(rowId);
 
         return true;
     }
 
     @Override
     public boolean remove(Tuple key, T rowId) {
-        Set<T> values = data.get(key);
+        final boolean[] removed = new boolean[1];
 
-        return values.remove(rowId);
+        data.compute(key, new BiFunction<Tuple, Set<T>, Set<T>>() {
+            @Override
+            public Set<T> apply(Tuple tuple, Set<T> ts) {
+                boolean st = ts.remove(rowId);
+
+                removed[0] = st;
+
+                return ts;
+            }
+        });
+
+        return removed[0];
     }
 }

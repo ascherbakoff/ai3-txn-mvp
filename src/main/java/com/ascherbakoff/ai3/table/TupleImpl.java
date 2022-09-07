@@ -40,11 +40,11 @@ class TupleImpl implements Tuple {
     }
 
     @Override
-    public Tuple fields(int... indexes) {
+    public Tuple select(int... indexes) {
         Object[] tmp = new Object[indexes.length];
 
         for (int i = 0; i < indexes.length; i++) {
-            tmp[i] = indexes[i];
+            tmp[i] = values[indexes[i]];
         }
 
         return Tuple.create(tmp);

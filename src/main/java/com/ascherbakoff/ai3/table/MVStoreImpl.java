@@ -5,34 +5,53 @@ import com.ascherbakoff.ai3.lock.DeadlockPrevention;
 import com.ascherbakoff.ai3.lock.Lock;
 import com.ascherbakoff.ai3.lock.LockMode;
 import com.ascherbakoff.ai3.lock.LockTable;
-import com.ascherbakoff.ai3.lock.Locker;
+import java.util.HashSet;
+import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
-import java.util.function.Consumer;
-import java.util.function.Function;
+import java.util.concurrent.ConcurrentHashMap;
 
 public class MVStoreImpl implements MVStore {
     private final VersionChainRowStore<Tuple> rowStore;
     private LockTable lockTable;
     private int[][] indexes;
     private HashIndex<VersionChain<Tuple>> primaryIndex = new HashIndexImpl<>(true);
+    Map<UUID, TxState> txnLocalMap = new ConcurrentHashMap<>(); // TBD add overflow test
 
     public MVStoreImpl(int[][] indexes) {
+        assert indexes.length > 0 : "PK index is mandatory";
+
         this.lockTable = new LockTable(10, true, DeadlockPrevention.none());
+        this.indexes = indexes;
         this.rowStore = new VersionChainRowStore<Tuple>();
     }
 
+    private TxState localState(UUID txId) {
+        return txnLocalMap.computeIfAbsent(txId, k -> new TxState());
+    }
+
     @Override
-    public CompletableFuture<Void> put(Tuple row, UUID txId) {
-        Tuple pk = row.fields(indexes[0]);
+    public CompletableFuture<Void> insert(Tuple row, UUID txId) {
+        Tuple pk = row.select(indexes[0]);
 
-        return lockTable.getOrAddEntry(pk).acquire(txId, LockMode.X).thenAccept(new Consumer<Void>() {
-            @Override
-            public void accept(Void ignored) {
-                VersionChain<Tuple> rowId = rowStore.insert(row, txId);
+        TxState txState = localState(txId);
 
-                primaryIndex.insert(pk, rowId);
+        Lock lock = lockTable.getOrAddEntry(pk);
+
+        txState.addLock(lock);
+
+        return lock.acquire(txId, LockMode.X).thenAccept(ignored -> {
+            // Inserted rowId is guaranteed to be unique.
+            VersionChain<Tuple> rowId = rowStore.insert(row, txId);
+
+            txState.addWrite(rowId);
+
+            if (!primaryIndex.insert(pk, rowId)) {
+                throw new UniqueException("Failed to insert the row: duplicate primary key " + pk);
             }
+
+            // TODO insert into other indexes
         });
     }
 
@@ -70,12 +89,49 @@ public class MVStoreImpl implements MVStore {
     }
 
     @Override
-    public CompletableFuture<Boolean> commit(UUID txId, Timestamp commitTs) {
-        return null;
+    public void commit(UUID txId, Timestamp commitTs) {
+        TxState state = txnLocalMap.remove(txId);
+
+        if (state == null)
+            return; // Already finished.
+
+        for (VersionChain<Tuple> write : state.writes) {
+            rowStore.commitWrite(write, commitTs, txId);
+        }
+
+        for (Lock lock : state.locks) {
+            lock.release(txId);
+        }
+
+        txnLocalMap.remove(txId);
     }
 
     @Override
-    public CompletableFuture<Boolean> abort(UUID txId) {
-        return null;
+    public void abort(UUID txId) {
+        TxState state = txnLocalMap.remove(txId);
+
+        if (state == null)
+            return; // Already finished.
+
+        for (VersionChain<Tuple> write : state.writes) {
+            rowStore.abortWrite(write, txId);
+        }
+
+        for (Lock lock : state.locks) {
+            lock.release(txId);
+        }
+    }
+
+    static class TxState {
+        Set<Lock> locks = new HashSet<>();
+        Set<VersionChain<Tuple>> writes = new HashSet<>();
+
+        synchronized void addLock(Lock lock) {
+            locks.add(lock);
+        }
+
+        synchronized void addWrite(VersionChain<Tuple> rowId) {
+            writes.add(rowId);
+        }
     }
 }
