@@ -102,8 +102,6 @@ public class MVStoreImpl implements MVStore {
         for (Lock lock : state.locks) {
             lock.release(txId);
         }
-
-        txnLocalMap.remove(txId);
     }
 
     @Override

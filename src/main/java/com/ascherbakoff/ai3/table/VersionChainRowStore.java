@@ -18,13 +18,13 @@ class VersionChainRowStore<T> implements RowStore<VersionChain<T>, T> {
     @Nullable
     @Override
     public T get(VersionChain<T> rowId, UUID txId, @Nullable Predicate<T> filter) {
-        return rowId.resolve(null, filter);
+        return rowId.resolve(txId, null, filter);
     }
 
     @Nullable
     @Override
     public T get(VersionChain<T> rowId, @Nullable Timestamp timestamp, @Nullable Predicate<T> filter) {
-        return rowId.resolve(timestamp, filter);
+        return rowId.resolve(null, timestamp, filter);
     }
 
     @Override
@@ -73,7 +73,7 @@ class VersionChainRowStore<T> implements RowStore<VersionChain<T>, T> {
 
                 VersionChain<T> next = iterator.next();
 
-                T val = next.resolve(null, null);
+                T val = next.resolve(txId, null, null);
 
                 assert val != null;
 
@@ -96,7 +96,7 @@ class VersionChainRowStore<T> implements RowStore<VersionChain<T>, T> {
 
                     VersionChain<T> next = iterator.next();
 
-                    T val = next.resolve(timestamp, null);
+                    T val = next.resolve(null, timestamp, null);
 
                     if (val != null)
                         return val;

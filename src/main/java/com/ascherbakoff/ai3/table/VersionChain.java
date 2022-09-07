@@ -73,7 +73,7 @@ class VersionChain<T> {
                 '}';
     }
 
-    @Nullable T resolve(@Nullable Timestamp timestamp, @Nullable Predicate<T> filter) {
+    @Nullable T resolve(@Nullable UUID txId, @Nullable Timestamp timestamp, @Nullable Predicate<T> filter) {
         if (timestamp == null) {
             return filter == null ? value : filter.test(value) ? value : null;
         }
