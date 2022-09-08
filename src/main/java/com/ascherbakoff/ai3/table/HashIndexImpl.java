@@ -1,5 +1,6 @@
 package com.ascherbakoff.ai3.table;
 
+import com.ascherbakoff.ai3.lock.LockTable;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.Iterator;
@@ -13,20 +14,32 @@ import java.util.function.BiFunction;
  */
 class HashIndexImpl<T> implements HashIndex<T> {
     final boolean unique;
+    private final LockTable lockTable;
     ConcurrentMap<Tuple, Set<T>> data = new ConcurrentHashMap<>();
 
-    HashIndexImpl(boolean unique) {
+    HashIndexImpl(LockTable lockTable, boolean unique) {
+        this.lockTable = lockTable;
         this.unique = unique;
     }
 
     @Override
-    public Iterator<T> scan(Tuple key) {
+    public Cursor<T> scan(Tuple key) {
         Set<T> vals = data.get(key);
 
         if (vals == null)
             vals = Collections.emptySet();
 
-        return vals.iterator();
+        Iterator<T> iter = vals.iterator();
+
+        return new Cursor<T>() {
+            @Override
+            public T next() {
+                if (!iter.hasNext())
+                    return null;
+
+                return iter.next();
+            }
+        };
     }
 
     @Override
@@ -71,5 +84,10 @@ class HashIndexImpl<T> implements HashIndex<T> {
         });
 
         return removed[0];
+    }
+
+    @Override
+    public LockTable lockTable() {
+        return lockTable;
     }
 }

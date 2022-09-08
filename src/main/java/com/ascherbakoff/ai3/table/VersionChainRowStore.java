@@ -1,6 +1,7 @@
 package com.ascherbakoff.ai3.table;
 
 import com.ascherbakoff.ai3.clock.Timestamp;
+import com.ascherbakoff.ai3.lock.LockTable;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.Set;
@@ -12,8 +13,13 @@ import org.jetbrains.annotations.Nullable;
  * TODO remove a specific version.
  * @param <T>
  */
-class VersionChainRowStore<T> implements RowStore<VersionChain<T>, T> {
+class VersionChainRowStore<T> implements RowStore<VersionChain<T>, T>, Lockable {
     private Set<VersionChain<T>> heads = new HashSet<>();
+    private LockTable lockTable;
+
+    VersionChainRowStore(LockTable lockTable) {
+        this.lockTable = lockTable;
+    }
 
     @Nullable
     @Override
@@ -103,5 +109,10 @@ class VersionChainRowStore<T> implements RowStore<VersionChain<T>, T> {
                 }
             }
         };
+    }
+
+    @Override
+    public LockTable lockTable() {
+        return lockTable;
     }
 }
