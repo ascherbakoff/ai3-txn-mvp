@@ -28,9 +28,9 @@ public class VersionChainRowStoreTest {
         assertEquals(t1, store.get(head, txId1, null));
         assertEquals(txId1, head.txId);
 
-        List<Tuple> heads = store.scan(txId1).getAll();
+        List<VersionChain<Tuple>> heads = store.scan(txId1).getAll();
         assertTrue(heads.size() == 1);
-        assertEquals(t1, heads.get(0));
+        assertEquals(t1, store.get(heads.get(0), txId1, null));
 
         Timestamp commitTs = Timestamp.now();
         store.commitWrite(head, commitTs, txId1);
@@ -51,9 +51,9 @@ public class VersionChainRowStoreTest {
         assertEquals(t1, store.get(head, txId1, null));
         assertEquals(txId1, head.txId);
 
-        List<Tuple> heads = store.scan(txId1).getAll();
+        List<VersionChain<Tuple>> heads = store.scan(txId1).getAll();
         assertTrue(heads.size() == 1);
-        assertEquals(t1, heads.get(0));
+        assertEquals(t1, store.get(heads.get(0), txId1, null));
 
         Tuple t2 = Tuple.create("name2", "id2@some.org");
 
@@ -131,6 +131,17 @@ public class VersionChainRowStoreTest {
         assertEquals(t2, store.scan(commitTs2).getAll().get(0));
         assertEquals(t1, store.get(rowId, commitTs1, null));
         assertEquals(t1, store.scan(commitTs1).getAll().get(0));
+    }
+
+    @Test
+    public void testUpdate() {
+        // Start txn 1.
+        Tuple t1 = Tuple.create("name1", "id1@some.org");
+        UUID txId1 = new UUID(0, 0);
+
+        VersionChain<Tuple> rowId = store.insert(t1, txId1);
+        assertNotNull(rowId);
+        assertEquals(t1, store.get(rowId, txId1, null));
     }
 }
 

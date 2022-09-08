@@ -19,4 +19,11 @@ public class Timestamp implements Comparable<Timestamp> {
     public static Timestamp now() {
         return new Timestamp(seq.incrementAndGet());
     }
+
+    @Override
+    public String toString() {
+        return "Timestamp{" +
+                "counter=" + counter +
+                '}';
+    }
 }

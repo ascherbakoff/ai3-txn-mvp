@@ -9,7 +9,7 @@ import org.jetbrains.annotations.Nullable;
 class VersionChain<T> {
     @Nullable Timestamp begin;
     @Nullable Timestamp end;
-    T value;
+    @Nullable T value;
     @Nullable
     UUID txId; // Lock holder for uncommitted version.
     @Nullable VersionChain<T> next;
@@ -101,11 +101,15 @@ class VersionChain<T> {
      * @param val The value or null for tombstone.
      * @param txId Txn id.
      */
-    public void addWrite(@Nullable T val, UUID txId) {
+    @Nullable
+    public T addWrite(@Nullable T val, UUID txId) {
         if (txId.equals(this.txId)) {
+            T oldVal = value;
             value = val;
-            return;
+            return oldVal;
         }
+
+        T oldVal = val;
 
         // Re-link.
         VersionChain<T> next0 = new VersionChain<>(txId, begin, end, value, next);
@@ -114,6 +118,8 @@ class VersionChain<T> {
         setEnd(null);
         setValue(val);
         setNext(next0);
+
+        return oldVal;
     }
 
     public void printVersionChain() {

@@ -12,6 +12,9 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Function;
 
 /**
  * TODO reduce copypaste, compact tx state
@@ -34,7 +37,7 @@ public class MVStoreImpl implements MVStore {
     }
 
     @Override
-    public CompletableFuture<Void> insert(Tuple row, UUID txId) {
+    public CompletableFuture<VersionChain<Tuple>> insert(Tuple row, UUID txId) {
         TxState txState = localState(txId);
 
         VersionChain<Tuple> rowId = rowStore.insert(row, txId);
@@ -62,34 +65,69 @@ public class MVStoreImpl implements MVStore {
             }));
         }
 
-        return CompletableFuture.allOf(futs.toArray(new CompletableFuture[0]));
+        return CompletableFuture.allOf(futs.toArray(new CompletableFuture[0])).thenApply(ignored -> rowId);
     }
 
     @Override
-    public CompletableFuture<Tuple> remove(Tuple keyTuple, UUID txId) {
-        return null;
+    public CompletableFuture<Tuple> update(VersionChain<Tuple> rowId, Tuple newRow, UUID txId) {
+        Lock lock = rowStore.lockTable().getOrAddEntry(rowId);
+
+        TxState txState = localState(txId);
+
+        txState.addLock(lock);
+
+        return lock.acquire(txId, LockMode.X).thenApply(ignored -> {
+            Tuple oldRow = rowStore.update(rowId, newRow, txId);
+
+            // TODO FIXME update indexes
+
+            return oldRow;
+        });
     }
 
     @Override
-    public AsyncCursor<Tuple> query(Query query, UUID txId) {
+    public CompletableFuture<Tuple> remove(VersionChain<Tuple> rowId, UUID txId) {
+        Lock lock = rowStore.lockTable().getOrAddEntry(rowId);
+
+        TxState txState = localState(txId);
+
+        txState.addLock(lock);
+
+        return lock.acquire(txId, LockMode.X).thenApply(ignored -> {
+            Tuple removed = rowStore.remove(rowId, txId);
+
+            // TODO FIXME update indexes
+
+            return removed;
+        });
+    }
+
+    @Override
+    public CompletableFuture<Tuple> get(VersionChain<Tuple> rowId, UUID txId) {
+        Lock lock = rowStore.lockTable().getOrAddEntry(rowId);
+
+        TxState txState = localState(txId);
+
+        txState.addLock(lock);
+
+        return lock.acquire(txId, LockMode.S).thenApply(x -> rowId.resolve(txId, null, null));
+    }
+
+    @Override
+    public AsyncCursor<VersionChain<Tuple>> query(Query query, UUID txId) {
         TxState txState = localState(txId);
         // TODO FIXME remove instanceof
         if (query instanceof ScanQuery) {
-            Cursor<Tuple> cur = rowStore.scan(txId);
+            // TODO FIXME table lock
 
-            return new AsyncCursor<Tuple>() {
+            Cursor<VersionChain<Tuple>> cur = rowStore.scan(txId);
+
+            return new AsyncCursor<VersionChain<Tuple>>() {
                 @Override
-                public CompletableFuture<Tuple> nextAsync() {
-                    Tuple tup = cur.next();
+                public CompletableFuture<VersionChain<Tuple>> nextAsync() {
+                    VersionChain<Tuple> rowId = cur.next();
 
-                    if (tup == null)
-                        return CompletableFuture.completedFuture(null);
-
-                    Lock lock = rowStore.lockTable().getOrAddEntry(tup);
-
-                    txState.addLock(lock);
-
-                    return lock.acquire(txId, LockMode.S).thenApply(x -> tup);
+                    return CompletableFuture.completedFuture(rowId);
                 }
             };
         }
@@ -101,27 +139,28 @@ public class MVStoreImpl implements MVStore {
             if (idx == null)
                 throw new IllegalArgumentException("Hash index not found for col=" + query0.col);
 
-            Cursor<VersionChain<Tuple>> iter = idx.scan(query0.queryKey);
+            AtomicReference<Cursor<VersionChain<Tuple>>> first = new AtomicReference<>();
 
-            return new AsyncCursor<Tuple>() {
+            return new AsyncCursor<VersionChain<Tuple>>() {
                 @Override
-                public CompletableFuture<Tuple> nextAsync() {
-                    while(true) {
-                        VersionChain<Tuple> tup = iter.next();
-
-                        if (tup == null)
-                            return CompletableFuture.completedFuture(null);
-
-                        Tuple val = tup.resolve(txId, null, null);
-
-                        if (val == null)
-                            continue;
-
-                        Lock lock = rowStore.lockTable().getOrAddEntry(tup);
+                public CompletableFuture<VersionChain<Tuple>> nextAsync() {
+                    Cursor<VersionChain<Tuple>> iter = first.get();
+                    if (iter == null) {
+                        Lock lock = idx.lockTable().getOrAddEntry(query0.queryKey);
 
                         txState.addLock(lock);
 
-                        return lock.acquire(txId, LockMode.S).thenApply(x -> val);
+                        return lock.acquire(txId, LockMode.S).thenApply(ignored -> {
+                            Cursor<VersionChain<Tuple>> iter0 = idx.scan(query0.queryKey);
+
+                            first.set(iter0);
+
+                            return iter0.next();
+                        });
+                    } else {
+                        VersionChain<Tuple> tup = iter.next();
+
+                        return CompletableFuture.completedFuture(tup);
                     }
                 }
             };

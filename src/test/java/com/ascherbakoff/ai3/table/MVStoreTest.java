@@ -20,7 +20,7 @@ import org.junit.jupiter.api.Test;
 public class MVStoreTest {
     private MVStoreImpl store = new MVStoreImpl(
             new VersionChainRowStore<>(new LockTable(10, true, DeadlockPrevention.none())),
-            Map.of(0, new HashIndexImpl<>(new LockTable(10, true, DeadlockPrevention.none()), true)), // PK on first column.
+            Map.of(0, new HashIndexImpl<>(new LockTable(10, true, DeadlockPrevention.none()), true)), // Index on first column.
             Map.of()
             );
 
@@ -38,7 +38,7 @@ public class MVStoreTest {
         store.commit(txId, Timestamp.now());
         assertNull(store.txnLocalMap.get(txId));
 
-        List<Tuple> rows = store.query(new ScanQuery(), txId).loadAll(new ArrayList<>(3)).join();
+        List<VersionChain<Tuple>> rows = store.query(new ScanQuery(), txId).loadAll(new ArrayList<>(3)).join();
         assertEquals(3, rows.size());
 
         assertEquals(Tuple.create(0, "val0"), getByIndex(txId, 0, Tuple.create(0)));
@@ -78,7 +78,7 @@ public class MVStoreTest {
 
         store.insert(Tuple.create(0, "val0"), txId).join();
 
-        CompletableFuture<Void> fut = store.insert(Tuple.create(0, "val0"), txId2);
+        CompletableFuture<?> fut = store.insert(Tuple.create(0, "val0"), txId2);
         assertFalse(fut.isDone());
 
         store.commit(txId, Timestamp.now());
@@ -90,6 +90,25 @@ public class MVStoreTest {
     }
 
     @Test
+    public void testUniqueWithHistory() {
+        UUID txId = new UUID(0, 0);
+        UUID txId2 = new UUID(0, 1);
+        UUID txId3 = new UUID(0, 2);
+
+        // TX1: id1 = insert [john, 100], TX1 // Insert tuple into row store
+        VersionChain<Tuple> rowId = store.insert(Tuple.create(0, "val0"), txId).join();
+        store.commit(txId, Timestamp.now());
+
+        // TX2: update id1, [john, 200], TX2 // Change salary for id1
+        store.update(rowId, Tuple.create(1, "val1"), txId2);
+        store.commit(txId2, Timestamp.now());
+
+        // TX3: id2 = insert [bill, 100], TX3
+        VersionChain<Tuple> rowId2 = store.insert(Tuple.create(0, "val2"), txId3).join();
+        store.commit(txId3, Timestamp.now());
+    }
+
+    @Test
     public void testConcurrentTransactions() {
         UUID txId1 = new UUID(0, 0);
         store.insert(Tuple.create(0, "val0"), txId1).join();
@@ -97,8 +116,11 @@ public class MVStoreTest {
         UUID txId2 = new UUID(0, 1);
         store.insert(Tuple.create(1, "val1"), txId2).join();
 
-        assertEquals(1, store.query(new ScanQuery(), txId1).loadAll(new ArrayList<>()).join().size());
-        assertEquals(1, store.query(new ScanQuery(), txId2).loadAll(new ArrayList<>()).join().size());
+        List<VersionChain<Tuple>> rows1 = store.query(new ScanQuery(), txId1).loadAll(new ArrayList<>()).join();
+        assertEquals(2, rows1.size());
+
+        List<VersionChain<Tuple>> rows2 = store.query(new ScanQuery(), txId2).loadAll(new ArrayList<>()).join();
+        assertEquals(2, rows2.size());
     }
 
     @Test
@@ -121,7 +143,8 @@ public class MVStoreTest {
 
     @Nullable
     private Tuple getByIndex(UUID txId, int col, Tuple searchKey) {
-        List<Tuple> rows = store.query(new EqQuery(col, searchKey), txId).loadAll(new ArrayList<>()).join();
-        return rows.isEmpty() ? null : rows.get(0);
+        AsyncCursor<VersionChain<Tuple>> query = store.query(new EqQuery(col, searchKey), txId);
+        List<VersionChain<Tuple>> rows = query.loadAll(new ArrayList<>()).join();
+        return rows.isEmpty() ? null : store.get(rows.get(0), txId).join();
     }
 }
