@@ -114,14 +114,14 @@ public class VersionChainRowStoreTest {
         Timestamp commitTs4 = Timestamp.now();
         store.commitWrite(rowId, commitTs4, txId4);
 
-        assertEquals(t4, store.get(rowId, (Timestamp) null, null));
+        assertEquals(t4, store.get(rowId, commitTs4, null));
 
         UUID txId5 = new UUID(0, 4);
         store.update(rowId, null, txId5);
         Timestamp commitTs5 = Timestamp.now();
         store.commitWrite(rowId, commitTs5, txId5);
 
-        assertEquals(null, store.get(rowId, (Timestamp) null, null));
+        assertEquals(null, store.get(rowId, new UUID(0, 5), null));
         assertEquals(null, store.get(rowId, commitTs5, null));
         assertTrue(store.scan(commitTs5).getAll().isEmpty());
         assertEquals(t4, store.scan(commitTs4).getAll().get(0));

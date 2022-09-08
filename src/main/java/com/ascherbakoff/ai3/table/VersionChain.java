@@ -74,7 +74,12 @@ class VersionChain<T> {
     }
 
     @Nullable T resolve(@Nullable UUID txId, @Nullable Timestamp timestamp, @Nullable Predicate<T> filter) {
+        assert txId == null ^ timestamp == null;
+
         if (timestamp == null) {
+            if (this.txId != null && !txId.equals(this.txId))
+                return null; // Skip write intents from other txns.
+
             return filter == null ? value : filter.test(value) ? value : null;
         }
 

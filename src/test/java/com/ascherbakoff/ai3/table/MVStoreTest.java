@@ -1,6 +1,7 @@
 package com.ascherbakoff.ai3.table;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
@@ -11,6 +12,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import org.jetbrains.annotations.Nullable;
 import org.junit.jupiter.api.Test;
@@ -66,6 +68,24 @@ public class MVStoreTest {
 
         store.insert(Tuple.create(0, "val0"), txId).join();
         var err = assertThrows(CompletionException.class, () -> store.insert(Tuple.create(0, "val0"), txId).join());
+        assertEquals(UniqueException.class, err.getCause().getClass());
+    }
+
+    @Test
+    public void testInsertDuplicate_2TX() {
+        UUID txId = new UUID(0, 0);
+        UUID txId2 = new UUID(0, 1);
+
+        store.insert(Tuple.create(0, "val0"), txId).join();
+
+        CompletableFuture<Void> fut = store.insert(Tuple.create(0, "val0"), txId2);
+        assertFalse(fut.isDone());
+
+        store.commit(txId, Timestamp.now());
+
+        var err = assertThrows(CompletionException.class, () -> {
+            fut.join();
+        });
         assertEquals(UniqueException.class, err.getCause().getClass());
     }
 

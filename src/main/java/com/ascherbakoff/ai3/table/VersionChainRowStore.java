@@ -29,7 +29,7 @@ class VersionChainRowStore<T> implements RowStore<VersionChain<T>, T>, Lockable 
 
     @Nullable
     @Override
-    public T get(VersionChain<T> rowId, @Nullable Timestamp timestamp, @Nullable Predicate<T> filter) {
+    public T get(VersionChain<T> rowId, Timestamp timestamp, @Nullable Predicate<T> filter) {
         return rowId.resolve(null, timestamp, filter);
     }
 
@@ -74,16 +74,17 @@ class VersionChainRowStore<T> implements RowStore<VersionChain<T>, T>, Lockable 
             @Nullable
             @Override
             public T next() {
-                if (!iterator.hasNext())
-                    return null;
+                while(true) {
+                    if (!iterator.hasNext())
+                        return null;
 
-                VersionChain<T> next = iterator.next();
+                    VersionChain<T> next = iterator.next();
 
-                T val = next.resolve(txId, null, null);
+                    T val = next.resolve(txId, null, null);
 
-                assert val != null;
-
-                return val;
+                    if (val != null)
+                        return val;
+                }
             }
         };
     }
