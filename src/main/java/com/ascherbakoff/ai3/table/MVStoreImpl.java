@@ -13,6 +13,8 @@ import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
+import java.util.function.Predicate;
 
 /**
  * TODO reduce copypaste, compact tx state
@@ -64,24 +66,21 @@ public class MVStoreImpl implements MVStore {
             txState.addLock(lock);
 
             futs.add(lock.acquire(txId, LockMode.X).thenAccept(ignored -> {
-                HashIndex<VersionChain<Tuple>> index = entry.getValue();
+                Cursor<VersionChain<Tuple>> rowIds = entry.getValue().scan(newVal);
 
-                AsyncCursor<VersionChain<Tuple>> query = query(new EqQuery(col, newVal), txId);
+                VersionChain<Tuple> rowId0;
 
-                // TODO FIXME
-                List<VersionChain<Tuple>> rows = query.loadAll(new ArrayList<>()).join();
-
-                for (VersionChain<Tuple> rowId0 : rows) {
+                while((rowId0 = rowIds.next()) != null) {
                     if (rowId0 == rowId) {
                         continue;
                     }
 
-                    Tuple row0 = rowStore.get(rowId0, txId, tuple -> tuple.select(col).equals(newVal));
-
-                    if (row0 != null) {
+                    // TODO FIXME this is not protected by lock
+                    if (rowStore.get(rowId0, txId, tuple -> tuple.select(col).equals(newVal)) != null)
                         throw new UniqueException("Failed to insert the row: duplicate index col=" + col + " key=" + newVal);
-                    }
                 }
+
+                HashIndex<VersionChain<Tuple>> index = entry.getValue();
 
                 if (index.insert(newVal, rowId)) {
                     // Undo insertion only if this transactions inserts a new entry.
@@ -120,11 +119,9 @@ public class MVStoreImpl implements MVStore {
 
                         txState.addLock(lock0);
 
-                        futs.add(lock0.acquire(txId, LockMode.X).thenAccept(ignored0 -> {
-                            if (entry.getValue().remove(oldVal, rowId)) {
-                                txState.addUndo(() -> entry.getValue().insert(oldVal, rowId));
-                            }
-                        }));
+                        futs.add(lock0.acquire(txId, LockMode.X));
+
+                        // Do not remove bookmarks due to multi-versioning.
                     }
 
                     if (newVal.length() > 0) {
@@ -133,6 +130,19 @@ public class MVStoreImpl implements MVStore {
                         txState.addLock(lock0);
 
                         futs.add(lock0.acquire(txId, LockMode.X).thenAccept(ignored0 -> {
+                            Cursor<VersionChain<Tuple>> rowIds = entry.getValue().scan(newVal);
+
+                            VersionChain<Tuple> rowId0;
+
+                            while((rowId0 = rowIds.next()) != null) {
+                                if (rowId0 == rowId) {
+                                    continue;
+                                }
+
+                                if (rowStore.get(rowId0, txId, tuple -> tuple.select(col).equals(newVal)) != null)
+                                    throw new UniqueException("Failed to insert the row: duplicate index col=" + col + " key=" + newVal);
+                            }
+
                             if (entry.getValue().insert(newVal, rowId)) {
                                 txState.addUndo(() -> entry.getValue().remove(newVal, rowId));
                             } else {
