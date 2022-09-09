@@ -56,6 +56,7 @@ public class MVStoreImpl implements MVStore {
 
         List<CompletableFuture> futs = new ArrayList<>(idxCnt);
 
+        // TODO FIXME refactor indexing and locking logic depending on index type.
         for (Entry<Integer, HashIndex<VersionChain<Tuple>>> entry : hashUniqIndexes.entrySet()) {
             int col = entry.getKey();
 
@@ -124,6 +125,7 @@ public class MVStoreImpl implements MVStore {
                         // Do not remove bookmarks due to multi-versioning.
                     }
 
+                    // TODO FIXME remove copypaste.
                     if (newVal.length() > 0) {
                         Lock lock0 = entry.getValue().lockTable().getOrAddEntry(newVal);
 
@@ -167,6 +169,8 @@ public class MVStoreImpl implements MVStore {
 
         return lock.acquire(txId, LockMode.X).thenApply(ignored -> {
             Tuple removed = rowStore.update(rowId, Tuple.TOMBSTONE, txId);
+
+            txState.addWrite(rowId);
 
             // Do not remove bookmarks due to multi-versioning.
 
