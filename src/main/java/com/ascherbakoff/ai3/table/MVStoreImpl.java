@@ -12,28 +12,36 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
-import java.util.function.Function;
 
 /**
  * TODO reduce copypaste, compact tx state
  */
 public class MVStoreImpl implements MVStore {
     private final VersionChainRowStore<Tuple> rowStore;
+    private Map<Integer, HashIndex<VersionChain<Tuple>>> hashUniqIndexes;
     private Map<Integer, HashIndex<VersionChain<Tuple>>> hashIndexes;
+    private Map<Integer, SortedIndex<VersionChain<Tuple>>> sortedUniqIndexes;
     private Map<Integer, SortedIndex<VersionChain<Tuple>>> sortedIndexes;
 
     Map<UUID, TxState> txnLocalMap = new ConcurrentHashMap<>(); // TBD add size overflow test
 
+    final int idxCnt;
+
     public MVStoreImpl(
             VersionChainRowStore<Tuple> rowStore,
+            Map<Integer, HashIndex<VersionChain<Tuple>>> hashUniqIndexes,
             Map<Integer, HashIndex<VersionChain<Tuple>>> hashIndexes,
+            Map<Integer, SortedIndex<VersionChain<Tuple>>> sortedUniqIndexes,
             Map<Integer, SortedIndex<VersionChain<Tuple>>> sortedIndexes
     ) {
+        this.hashUniqIndexes = hashUniqIndexes;
         this.hashIndexes = hashIndexes;
+        this.sortedUniqIndexes = sortedUniqIndexes;
         this.sortedIndexes = sortedIndexes;
         this.rowStore = rowStore;
+        this.idxCnt = hashUniqIndexes.size() + hashIndexes.size() + sortedUniqIndexes.size() + sortedIndexes.size();
+
     }
 
     @Override
@@ -44,23 +52,40 @@ public class MVStoreImpl implements MVStore {
 
         txState.addWrite(rowId);
 
-        List<CompletableFuture> futs = new ArrayList<>(hashIndexes.size() + sortedIndexes.size());
+        List<CompletableFuture> futs = new ArrayList<>(idxCnt);
 
-        for (Entry<Integer, HashIndex<VersionChain<Tuple>>> entry : hashIndexes.entrySet()) {
+        for (Entry<Integer, HashIndex<VersionChain<Tuple>>> entry : hashUniqIndexes.entrySet()) {
             int col = entry.getKey();
 
-            Tuple indexedKey = row.select(col);
+            Tuple newVal = row.select(col);
 
-            Lock lock = entry.getValue().lockTable().getOrAddEntry(indexedKey);
+            Lock lock = entry.getValue().lockTable().getOrAddEntry(newVal);
 
             txState.addLock(lock);
 
             futs.add(lock.acquire(txId, LockMode.X).thenAccept(ignored -> {
-                // Inserted rowId is guaranteed to be unique, so no lock.
-                if (!entry.getValue().insert(indexedKey, rowId)) {
-                    throw new UniqueException("Failed to insert the row: duplicate primary key " + indexedKey);
-                } else {
-                    txState.addUndo(() -> entry.getValue().remove(indexedKey, rowId));
+                HashIndex<VersionChain<Tuple>> index = entry.getValue();
+
+                AsyncCursor<VersionChain<Tuple>> query = query(new EqQuery(col, newVal), txId);
+
+                // TODO FIXME
+                List<VersionChain<Tuple>> rows = query.loadAll(new ArrayList<>()).join();
+
+                for (VersionChain<Tuple> rowId0 : rows) {
+                    if (rowId0 == rowId) {
+                        continue;
+                    }
+
+                    Tuple row0 = rowStore.get(rowId0, txId, tuple -> tuple.select(col).equals(newVal));
+
+                    if (row0 != null) {
+                        throw new UniqueException("Failed to insert the row: duplicate index col=" + col + " key=" + newVal);
+                    }
+                }
+
+                if (index.insert(newVal, rowId)) {
+                    // Undo insertion only if this transactions inserts a new entry.
+                    txState.addUndo(() -> index.remove(newVal, rowId));
                 }
             }));
         }
@@ -76,12 +101,49 @@ public class MVStoreImpl implements MVStore {
 
         txState.addLock(lock);
 
-        return lock.acquire(txId, LockMode.X).thenApply(ignored -> {
+        return lock.acquire(txId, LockMode.X).thenCompose(ignored -> {
             Tuple oldRow = rowStore.update(rowId, newRow, txId);
 
-            // TODO FIXME update indexes
+            txState.addWrite(rowId);
 
-            return oldRow;
+            List<CompletableFuture> futs = new ArrayList<>(idxCnt);
+
+            for (Entry<Integer, HashIndex<VersionChain<Tuple>>> entry : hashUniqIndexes.entrySet()) {
+                int col = entry.getKey();
+
+                Tuple oldVal = oldRow == Tuple.TOMBSTONE ? Tuple.TOMBSTONE : oldRow.select(col);
+                Tuple newVal = newRow == Tuple.TOMBSTONE ? Tuple.TOMBSTONE : newRow.select(col);
+
+                if (!oldVal.equals(newVal)) {
+                    if (oldVal.length() > 0) {
+                        Lock lock0 = entry.getValue().lockTable().getOrAddEntry(oldVal);
+
+                        txState.addLock(lock0);
+
+                        futs.add(lock0.acquire(txId, LockMode.X).thenAccept(ignored0 -> {
+                            if (entry.getValue().remove(oldVal, rowId)) {
+                                txState.addUndo(() -> entry.getValue().insert(oldVal, rowId));
+                            }
+                        }));
+                    }
+
+                    if (newVal.length() > 0) {
+                        Lock lock0 = entry.getValue().lockTable().getOrAddEntry(newVal);
+
+                        txState.addLock(lock0);
+
+                        futs.add(lock0.acquire(txId, LockMode.X).thenAccept(ignored0 -> {
+                            if (entry.getValue().insert(newVal, rowId)) {
+                                txState.addUndo(() -> entry.getValue().remove(newVal, rowId));
+                            } else {
+                                throw new UniqueException("Failed to insert the row: duplicate index col=" + col + " key=" + newVal);
+                            }
+                        }));
+                    }
+                }
+            }
+
+            return CompletableFuture.allOf(futs.toArray(new CompletableFuture[0])).thenApply(ignored0 -> oldRow);
         });
     }
 
@@ -94,9 +156,9 @@ public class MVStoreImpl implements MVStore {
         txState.addLock(lock);
 
         return lock.acquire(txId, LockMode.X).thenApply(ignored -> {
-            Tuple removed = rowStore.remove(rowId, txId);
+            Tuple removed = rowStore.update(rowId, Tuple.TOMBSTONE, txId);
 
-            // TODO FIXME update indexes
+            // Do not remove bookmarks due to multi-versioning.
 
             return removed;
         });
@@ -137,21 +199,26 @@ public class MVStoreImpl implements MVStore {
             HashIndex<VersionChain<Tuple>> idx = hashIndexes.get(query0.col);
 
             if (idx == null)
+                idx = hashUniqIndexes.get(query0.col);
+
+            if (idx == null)
                 throw new IllegalArgumentException("Hash index not found for col=" + query0.col);
 
             AtomicReference<Cursor<VersionChain<Tuple>>> first = new AtomicReference<>();
+
+            HashIndex<VersionChain<Tuple>> finalIdx = idx;
 
             return new AsyncCursor<VersionChain<Tuple>>() {
                 @Override
                 public CompletableFuture<VersionChain<Tuple>> nextAsync() {
                     Cursor<VersionChain<Tuple>> iter = first.get();
                     if (iter == null) {
-                        Lock lock = idx.lockTable().getOrAddEntry(query0.queryKey);
+                        Lock lock = finalIdx.lockTable().getOrAddEntry(query0.queryKey);
 
                         txState.addLock(lock);
 
                         return lock.acquire(txId, LockMode.S).thenApply(ignored -> {
-                            Cursor<VersionChain<Tuple>> iter0 = idx.scan(query0.queryKey);
+                            Cursor<VersionChain<Tuple>> iter0 = finalIdx.scan(query0.queryKey);
 
                             first.set(iter0);
 

@@ -21,9 +21,13 @@ package com.ascherbakoff.ai3.table;
  *
  */
 public interface Tuple {
+    static Tuple TOMBSTONE = Tuple.create();
+
     <T> T get(int index);
 
     void set(int index, Object value);
+
+    int length();
 
     Tuple select(int... indexes);
 

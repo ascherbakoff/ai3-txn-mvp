@@ -77,8 +77,7 @@ class VersionChain<T> {
         assert txId == null ^ timestamp == null;
 
         if (timestamp == null) {
-            if (this.txId != null && !txId.equals(this.txId))
-                return null; // Skip write intents from other txns.
+            assert this.txId == null || txId.equals(this.txId); // Must be enforced by locks.
 
             return filter == null ? value : filter.test(value) ? value : null;
         }
@@ -98,11 +97,12 @@ class VersionChain<T> {
 
     /**
      * @param head The chain head.
-     * @param val The value or null for tombstone.
+     * @param val The value.
      * @param txId Txn id.
      */
-    @Nullable
-    public T addWrite(@Nullable T val, UUID txId) {
+    public T addWrite(T val, UUID txId) {
+        assert val != null;
+
         if (txId.equals(this.txId)) {
             T oldVal = value;
             value = val;

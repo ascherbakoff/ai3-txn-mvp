@@ -4,6 +4,7 @@ import com.ascherbakoff.ai3.clock.Timestamp;
 import com.ascherbakoff.ai3.lock.LockTable;
 import java.util.Collections;
 import java.util.Iterator;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -22,13 +23,11 @@ class VersionChainRowStore<T> implements RowStore<VersionChain<T>, T>, Lockable 
         this.lockTable = lockTable;
     }
 
-    @Nullable
     @Override
     public T get(VersionChain<T> rowId, UUID txId, @Nullable Predicate<T> filter) {
         return rowId.resolve(txId, null, filter);
     }
 
-    @Nullable
     @Override
     public T get(VersionChain<T> rowId, Timestamp timestamp, @Nullable Predicate<T> filter) {
         return rowId.resolve(null, timestamp, filter);
@@ -41,18 +40,13 @@ class VersionChainRowStore<T> implements RowStore<VersionChain<T>, T>, Lockable 
         return head;
     }
 
-    @Nullable
     @Override
-    public T update(VersionChain<T> rowId, @Nullable T newRow, UUID txId) {
+    public T update(VersionChain<T> rowId, T newRow, UUID txId) {
         assert rowId != null;
 
         return rowId.addWrite(newRow, txId);
     }
 
-    @Override
-    public @Nullable T remove(VersionChain<T> rowId, UUID txId) {
-        return rowId.addWrite(null, txId);
-    }
 
     @Override
     public void commitWrite(VersionChain<T> rowId, Timestamp timestamp, UUID txId) {

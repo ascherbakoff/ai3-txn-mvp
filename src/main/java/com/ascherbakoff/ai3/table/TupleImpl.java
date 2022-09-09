@@ -40,6 +40,11 @@ class TupleImpl implements Tuple {
     }
 
     @Override
+    public int length() {
+        return values.length;
+    }
+
+    @Override
     public Tuple select(int... indexes) {
         Object[] tmp = new Object[indexes.length];
 

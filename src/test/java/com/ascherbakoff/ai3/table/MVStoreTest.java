@@ -20,7 +20,9 @@ import org.junit.jupiter.api.Test;
 public class MVStoreTest {
     private MVStoreImpl store = new MVStoreImpl(
             new VersionChainRowStore<>(new LockTable(10, true, DeadlockPrevention.none())),
-            Map.of(0, new HashIndexImpl<>(new LockTable(10, true, DeadlockPrevention.none()), true)), // Index on first column.
+            Map.of(0, new HashIndexImpl<>(new LockTable(10, true, DeadlockPrevention.none()))),
+            Map.of(),
+            Map.of(),
             Map.of()
             );
 
@@ -99,8 +101,8 @@ public class MVStoreTest {
         VersionChain<Tuple> rowId = store.insert(Tuple.create(0, "val0"), txId).join();
         store.commit(txId, Timestamp.now());
 
-        // TX2: update id1, [john, 200], TX2 // Change salary for id1
-        store.update(rowId, Tuple.create(1, "val1"), txId2);
+//        // TX2: update id1, [john, 200], TX2 // Change salary for id1
+        store.update(rowId, Tuple.create(1, "val1"), txId2).join();
         store.commit(txId2, Timestamp.now());
 
         // TX3: id2 = insert [bill, 100], TX3
@@ -146,5 +148,12 @@ public class MVStoreTest {
         AsyncCursor<VersionChain<Tuple>> query = store.query(new EqQuery(col, searchKey), txId);
         List<VersionChain<Tuple>> rows = query.loadAll(new ArrayList<>()).join();
         return rows.isEmpty() ? null : store.get(rows.get(0), txId).join();
+    }
+
+    @Nullable
+    private Tuple getByIndex(Timestamp ts, int col, Tuple searchKey) {
+        Cursor<Tuple> query = store.query(new EqQuery(col, searchKey), ts);
+        List<Tuple> rows = query.getAll();
+        return rows.isEmpty() ? null : rows.get(0);
     }
 }
