@@ -18,13 +18,15 @@ import org.jetbrains.annotations.Nullable;
 import org.junit.jupiter.api.Test;
 
 public class MVStoreTest {
-    private MVStoreImpl store = new MVStoreImpl(
-            new VersionChainRowStore<>(new LockTable(10, true, DeadlockPrevention.none())),
-            Map.of(0, new HashIndexImpl<>(new LockTable(10, true, DeadlockPrevention.none()))),
-            Map.of(),
-            Map.of(),
-            Map.of()
-            );
+    private MVStoreImpl store;
+
+    {
+        VersionChainRowStore<Tuple> rowStore = new VersionChainRowStore<>(new LockTable(10, true, DeadlockPrevention.none()));
+        store = new MVStoreImpl(
+                rowStore,
+                Map.of(0, new HashUniqueIndex(0, new LockTable(10, true, DeadlockPrevention.none()), new HashIndexStoreImpl<>(), rowStore))
+        );
+    }
 
     @Test
     public void testInsert() {
@@ -106,8 +108,29 @@ public class MVStoreTest {
         store.commit(txId2, Timestamp.now());
 
         // TX3: id2 = insert [bill, 100], TX3
-        VersionChain<Tuple> rowId2 = store.insert(Tuple.create(0, "val2"), txId3).join();
+        VersionChain<Tuple> rowId2 = store.insert(Tuple.create(0, "val2"), txId3).join(); // Insert must success.
         store.commit(txId3, Timestamp.now());
+    }
+
+    @Test
+    public void testUniqueWithHistory2() {
+        UUID txId = new UUID(0, 0);
+        UUID txId2 = new UUID(0, 1);
+        UUID txId3 = new UUID(0, 2);
+        UUID txId4 = new UUID(0, 4);
+
+        VersionChain<Tuple> rowId = store.insert(Tuple.create(0, "val0"), txId).join();
+        store.commit(txId, Timestamp.now());
+
+        store.update(rowId, Tuple.create(1, "val1"), txId2).join();
+        store.commit(txId2, Timestamp.now());
+
+        store.update(rowId, Tuple.create(0, "val2"), txId3).join();
+        store.commit(txId3, Timestamp.now());
+
+        // TX3: id2 = insert [bill, 100], TX3
+        var err = assertThrows(CompletionException.class, () -> store.insert(Tuple.create(0, "val3"), txId4).join());
+        assertEquals(UniqueException.class, err.getCause().getClass());
     }
 
     @Test

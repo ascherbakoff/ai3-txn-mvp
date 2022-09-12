@@ -4,14 +4,12 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import com.ascherbakoff.ai3.lock.DeadlockPrevention;
-import com.ascherbakoff.ai3.lock.LockTable;
 import org.junit.jupiter.api.Test;
 
-public class HashIndexTest {
+public class HashIndexStoreTest {
     @Test
     public void testInsertScanRemove() {
-        HashIndex<Integer> idx = new HashIndexImpl(new LockTable(10, true, DeadlockPrevention.none()));
+        HashIndexStore<Integer> idx = new HashIndexStoreImpl();
 
         Tuple t = Tuple.create(1, "qqq");
 
@@ -26,7 +24,7 @@ public class HashIndexTest {
 
     @Test
     public void testInsertScanRemoveMany() {
-        HashIndex<Integer> idx = new HashIndexImpl(new LockTable(10, true, DeadlockPrevention.none()));
+        HashIndexStore<Integer> idx = new HashIndexStoreImpl();
 
         Tuple t1 = Tuple.create(1, "qqq");
         Tuple t2 = Tuple.create(1, "zzz");

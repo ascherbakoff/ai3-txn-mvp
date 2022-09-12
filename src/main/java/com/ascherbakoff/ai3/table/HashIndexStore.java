@@ -1,6 +1,6 @@
 package com.ascherbakoff.ai3.table;
 
-interface HashIndex<T> extends Lockable {
+interface HashIndexStore<T> {
     Cursor<T> scan(Tuple key);
 
     boolean insert(Tuple key, T rowId);

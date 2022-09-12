@@ -3,6 +3,7 @@ package com.ascherbakoff.ai3.table;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.ascherbakoff.ai3.clock.Timestamp;
@@ -117,13 +118,13 @@ public class VersionChainRowStoreTest {
         assertEquals(t4, store.get(rowId, commitTs4, null));
 
         UUID txId5 = new UUID(0, 4);
-        store.update(rowId, null, txId5);
+        store.update(rowId, Tuple.TOMBSTONE, txId5);
         Timestamp commitTs5 = Timestamp.now();
         store.commitWrite(rowId, commitTs5, txId5);
 
-        assertEquals(null, store.get(rowId, new UUID(0, 5), null));
-        assertEquals(null, store.get(rowId, commitTs5, null));
-        assertTrue(store.scan(commitTs5).getAll().isEmpty());
+        assertSame(Tuple.TOMBSTONE, store.get(rowId, new UUID(0, 5), null));
+        assertSame(Tuple.TOMBSTONE, store.get(rowId, commitTs5, null));
+        assertSame(Tuple.TOMBSTONE, store.scan(commitTs5).getAll().get(0));
         assertEquals(t4, store.scan(commitTs4).getAll().get(0));
         assertEquals(t2, store.get(rowId, commitTs3, null));
         assertEquals(t2, store.scan(commitTs3).getAll().get(0));

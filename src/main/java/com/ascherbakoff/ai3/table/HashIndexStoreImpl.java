@@ -1,6 +1,5 @@
 package com.ascherbakoff.ai3.table;
 
-import com.ascherbakoff.ai3.lock.LockTable;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.Iterator;
@@ -11,13 +10,8 @@ import java.util.concurrent.ConcurrentMap;
 /**
  *
  */
-class HashIndexImpl<T> implements HashIndex<T> {
-    private final LockTable lockTable;
+class HashIndexStoreImpl<T> implements HashIndexStore<T> {
     ConcurrentMap<Tuple, Set<T>> data = new ConcurrentHashMap<>();
-
-    HashIndexImpl(LockTable lockTable) {
-        this.lockTable = lockTable;
-    }
 
     @Override
     public Cursor<T> scan(Tuple key) {
@@ -71,10 +65,5 @@ class HashIndexImpl<T> implements HashIndex<T> {
         });
 
         return removed[0];
-    }
-
-    @Override
-    public LockTable lockTable() {
-        return lockTable;
     }
 }
