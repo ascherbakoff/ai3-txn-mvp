@@ -10,13 +10,13 @@ import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicReference;
 
-public class HashUniqueIndex implements Index {
+public class HashNonUniqueIndex implements Index {
     int col;
     LockTable lockTable;
     HashIndexStore<VersionChain<Tuple>> index;
     VersionChainRowStore<Tuple> rowStore;
 
-    public HashUniqueIndex(
+    public HashNonUniqueIndex(
             int col,
             LockTable lockTable,
             HashIndexStore<VersionChain<Tuple>> index,
@@ -36,21 +36,7 @@ public class HashUniqueIndex implements Index {
 
         txState.addLock(lock);
 
-        return lock.acquire(txId, LockMode.X).thenAccept(ignored -> {
-            Cursor<VersionChain<Tuple>> rowIds = index.scan(newVal);
-
-            VersionChain<Tuple> rowId0;
-
-            while((rowId0 = rowIds.next()) != null) {
-                if (rowId0 == rowId) {
-                    continue;
-                }
-
-                // TODO FIXME LOCK IS NEEDED - a concurrent tx can insert conflicting value and commit just after check.
-                if (rowStore.get(rowId0, txId, tuple -> tuple.select(col).equals(newVal)) != null)
-                    throw new UniqueException("Failed to insert the row: duplicate index col=" + col + " key=" + newVal);
-            }
-
+        return lock.acquire(txId, LockMode.IX).thenAccept(ignored -> {
             if (index.insert(newVal, rowId)) {
                 // Undo insertion only if this transactions inserts a new entry.
                 txState.addUndo(() -> index.remove(newVal, rowId));
@@ -71,33 +57,17 @@ public class HashUniqueIndex implements Index {
 
                 txState.addLock(lock0);
 
-                futs.add(lock0.acquire(txId, LockMode.X));
+                futs.add(lock0.acquire(txId, LockMode.IX));
 
                 // Do not remove bookmarks due to multi-versioning.
             }
 
-            // TODO FIXME remove copypaste.
             if (newVal.length() > 0) {
                 Lock lock0 = lockTable.getOrAddEntry(newVal);
 
                 txState.addLock(lock0);
 
-                futs.add(lock0.acquire(txId, LockMode.X).thenAccept(ignored0 -> {
-                    Cursor<VersionChain<Tuple>> rowIds = index.scan(newVal);
-
-                    VersionChain<Tuple> rowId0;
-
-                    while ((rowId0 = rowIds.next()) != null) {
-                        if (rowId0 == rowId) {
-                            continue;
-                        }
-
-                        // TODO FIXME LOCK IS NEEDED
-                        if (rowStore.get(rowId0, txId, tuple -> tuple.select(col).equals(newVal)) != null) {
-                            throw new UniqueException("Failed to insert the row: duplicate index col=" + col + " key=" + newVal);
-                        }
-                    }
-
+                futs.add(lock0.acquire(txId, LockMode.IX).thenAccept(ignored0 -> {
                     if (index.insert(newVal, rowId)) {
                         txState.addUndo(() -> index.remove(newVal, rowId));
                     } else {
@@ -120,7 +90,7 @@ public class HashUniqueIndex implements Index {
 
         // Do not physically remove bookmarks from the index due to multi-versioning.
 
-        return lock.acquire(txId, LockMode.X);
+        return lock.acquire(txId, LockMode.IX);
     }
 
     @Override

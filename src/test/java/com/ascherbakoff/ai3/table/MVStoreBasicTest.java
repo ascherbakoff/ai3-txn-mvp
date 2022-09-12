@@ -1,32 +1,17 @@
 package com.ascherbakoff.ai3.table;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import com.ascherbakoff.ai3.clock.Timestamp;
-import com.ascherbakoff.ai3.lock.DeadlockPrevention;
-import com.ascherbakoff.ai3.lock.LockTable;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CompletionException;
 import org.jetbrains.annotations.Nullable;
 import org.junit.jupiter.api.Test;
 
-public class MVStoreTest {
-    private MVStoreImpl store;
-
-    {
-        VersionChainRowStore<Tuple> rowStore = new VersionChainRowStore<>(new LockTable(10, true, DeadlockPrevention.none()));
-        store = new MVStoreImpl(
-                rowStore,
-                Map.of(0, new HashUniqueIndex(0, new LockTable(10, true, DeadlockPrevention.none()), new HashIndexStoreImpl<>(), rowStore))
-        );
-    }
+public abstract class MVStoreBasicTest {
+    MVStoreImpl store;
 
     @Test
     public void testInsert() {
@@ -67,30 +52,21 @@ public class MVStoreTest {
     }
 
     @Test
-    public void testInsertDuplicate() {
-        UUID txId = new UUID(0, 0);
+    public void testIndexQuery() {
+        UUID txId1 = new UUID(0, 0);
 
-        store.insert(Tuple.create(0, "val0"), txId).join();
-        var err = assertThrows(CompletionException.class, () -> store.insert(Tuple.create(0, "val0"), txId).join());
-        assertEquals(UniqueException.class, err.getCause().getClass());
-    }
+        Tuple t1 = Tuple.create(0, "val0");
+        store.insert(t1, txId1).join();
+        Tuple t2 = Tuple.create(1, "val1");
+        store.insert(t2, txId1).join();
 
-    @Test
-    public void testInsertDuplicate_2TX() {
-        UUID txId = new UUID(0, 0);
-        UUID txId2 = new UUID(0, 1);
+        assertEquals(t1, getByIndex(txId1, 0, Tuple.create(0)));
+        assertEquals(t2, getByIndex(txId1, 0, Tuple.create(1)));
 
-        store.insert(Tuple.create(0, "val0"), txId).join();
+        store.commit(txId1, Timestamp.now());
 
-        CompletableFuture<?> fut = store.insert(Tuple.create(0, "val0"), txId2);
-        assertFalse(fut.isDone());
-
-        store.commit(txId, Timestamp.now());
-
-        var err = assertThrows(CompletionException.class, () -> {
-            fut.join();
-        });
-        assertEquals(UniqueException.class, err.getCause().getClass());
+        assertEquals(t1, getByIndex(txId1, 0, Tuple.create(0)));
+        assertEquals(t2, getByIndex(txId1, 0, Tuple.create(1)));
     }
 
     @Test
@@ -113,27 +89,6 @@ public class MVStoreTest {
     }
 
     @Test
-    public void testUniqueWithHistory2() {
-        UUID txId = new UUID(0, 0);
-        UUID txId2 = new UUID(0, 1);
-        UUID txId3 = new UUID(0, 2);
-        UUID txId4 = new UUID(0, 4);
-
-        VersionChain<Tuple> rowId = store.insert(Tuple.create(0, "val0"), txId).join();
-        store.commit(txId, Timestamp.now());
-
-        store.update(rowId, Tuple.create(1, "val1"), txId2).join();
-        store.commit(txId2, Timestamp.now());
-
-        store.update(rowId, Tuple.create(0, "val2"), txId3).join();
-        store.commit(txId3, Timestamp.now());
-
-        // TX3: id2 = insert [bill, 100], TX3
-        var err = assertThrows(CompletionException.class, () -> store.insert(Tuple.create(0, "val3"), txId4).join());
-        assertEquals(UniqueException.class, err.getCause().getClass());
-    }
-
-    @Test
     public void testConcurrentTransactions() {
         UUID txId1 = new UUID(0, 0);
         store.insert(Tuple.create(0, "val0"), txId1).join();
@@ -148,33 +103,15 @@ public class MVStoreTest {
         assertEquals(2, rows2.size());
     }
 
-    @Test
-    public void testIndexQuery() {
-        UUID txId1 = new UUID(0, 0);
-
-        Tuple t1 = Tuple.create(0, "val0");
-        store.insert(t1, txId1).join();
-        Tuple t2 = Tuple.create(1, "val1");
-        store.insert(t2, txId1).join();
-
-        assertEquals(t1, getByIndex(txId1, 0, Tuple.create(0)));
-        assertEquals(t2, getByIndex(txId1, 0, Tuple.create(1)));
-
-        store.commit(txId1, Timestamp.now());
-
-        assertEquals(t1, getByIndex(txId1, 0, Tuple.create(0)));
-        assertEquals(t2, getByIndex(txId1, 0, Tuple.create(1)));
-    }
-
     @Nullable
-    private Tuple getByIndex(UUID txId, int col, Tuple searchKey) {
+    Tuple getByIndex(UUID txId, int col, Tuple searchKey) {
         AsyncCursor<VersionChain<Tuple>> query = store.query(new EqQuery(col, searchKey), txId);
         List<VersionChain<Tuple>> rows = query.loadAll(new ArrayList<>()).join();
         return rows.isEmpty() ? null : store.get(rows.get(0), txId).join();
     }
 
     @Nullable
-    private Tuple getByIndex(Timestamp ts, int col, Tuple searchKey) {
+    Tuple getByIndex(Timestamp ts, int col, Tuple searchKey) {
         Cursor<Tuple> query = store.query(new EqQuery(col, searchKey), ts);
         List<Tuple> rows = query.getAll();
         return rows.isEmpty() ? null : rows.get(0);

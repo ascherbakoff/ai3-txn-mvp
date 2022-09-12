@@ -7,8 +7,6 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.ascherbakoff.ai3.clock.Timestamp;
-import com.ascherbakoff.ai3.lock.DeadlockPrevention;
-import com.ascherbakoff.ai3.lock.LockTable;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
@@ -16,7 +14,7 @@ import org.junit.jupiter.api.Test;
 /**
  */
 public class VersionChainRowStoreTest {
-    private VersionChainRowStore<Tuple> store = new VersionChainRowStore<>(new LockTable(10, true, DeadlockPrevention.none()));
+    private VersionChainRowStore<Tuple> store = new VersionChainRowStore<>();
 
     @Test
     public void testInsertGetCommit() {

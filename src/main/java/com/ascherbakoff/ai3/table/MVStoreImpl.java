@@ -3,6 +3,7 @@ package com.ascherbakoff.ai3.table;
 import com.ascherbakoff.ai3.clock.Timestamp;
 import com.ascherbakoff.ai3.lock.Lock;
 import com.ascherbakoff.ai3.lock.LockMode;
+import com.ascherbakoff.ai3.lock.LockTable;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -18,14 +19,16 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 public class MVStoreImpl implements MVStore {
     private final VersionChainRowStore<Tuple> rowStore;
-    private Map<Integer, HashUniqueIndex> indexes;
+    private final LockTable lockTable;
+    private Map<Integer, Index> indexes;
 
     Map<UUID, TxState> txnLocalMap = new ConcurrentHashMap<>(); // TBD add size overflow test
 
     final int idxCnt;
 
-    public MVStoreImpl(VersionChainRowStore<Tuple> rowStore, Map<Integer, HashUniqueIndex> indexes) {
+    public MVStoreImpl(VersionChainRowStore<Tuple> rowStore, LockTable lockTable, Map<Integer, Index> indexes) {
         this.indexes = indexes;
+        this.lockTable = lockTable;
         this.rowStore = rowStore;
         this.idxCnt = indexes.size();
     }
@@ -41,7 +44,7 @@ public class MVStoreImpl implements MVStore {
         List<CompletableFuture> futs = new ArrayList<>(idxCnt);
 
         // TODO FIXME lock sorting ??? Can we get deadlocks on index updates ?.
-        for (Entry<Integer, HashUniqueIndex> entry : indexes.entrySet()) {
+        for (Entry<Integer, Index> entry : indexes.entrySet()) {
             futs.add(entry.getValue().insert(txId, txState, row, rowId));
         }
 
@@ -50,7 +53,7 @@ public class MVStoreImpl implements MVStore {
 
     @Override
     public CompletableFuture<Tuple> update(VersionChain<Tuple> rowId, Tuple newRow, UUID txId) {
-        Lock lock = rowStore.lockTable().getOrAddEntry(rowId);
+        Lock lock = lockTable.getOrAddEntry(rowId);
 
         TxState txState = localState(txId);
 
@@ -63,7 +66,7 @@ public class MVStoreImpl implements MVStore {
 
             List<CompletableFuture> futs = new ArrayList<>(idxCnt);
 
-            for (Entry<Integer, HashUniqueIndex> entry : indexes.entrySet()) {
+            for (Entry<Integer, Index> entry : indexes.entrySet()) {
                 futs.add(entry.getValue().update(txId, txState, oldRow, newRow, rowId));
             }
 
@@ -73,7 +76,7 @@ public class MVStoreImpl implements MVStore {
 
     @Override
     public CompletableFuture<Tuple> remove(VersionChain<Tuple> rowId, UUID txId) {
-        Lock lock = rowStore.lockTable().getOrAddEntry(rowId);
+        Lock lock = lockTable.getOrAddEntry(rowId);
 
         TxState txState = localState(txId);
 
@@ -87,7 +90,7 @@ public class MVStoreImpl implements MVStore {
             List<CompletableFuture> futs = new ArrayList<>(idxCnt);
 
             // TODO FIXME lock sorting ??? Can we get deadlocks on index updates ?.
-            for (Entry<Integer, HashUniqueIndex> entry : indexes.entrySet()) {
+            for (Entry<Integer, Index> entry : indexes.entrySet()) {
                 futs.add(entry.getValue().remove(txId, txState, oldRow, rowId));
             }
 
@@ -97,7 +100,7 @@ public class MVStoreImpl implements MVStore {
 
     @Override
     public CompletableFuture<Tuple> get(VersionChain<Tuple> rowId, UUID txId) {
-        Lock lock = rowStore.lockTable().getOrAddEntry(rowId);
+        Lock lock = lockTable.getOrAddEntry(rowId);
 
         TxState txState = localState(txId);
 
@@ -126,7 +129,7 @@ public class MVStoreImpl implements MVStore {
         } else if (query instanceof EqQuery) {
             EqQuery query0 = (EqQuery) query;
 
-            HashUniqueIndex idx = indexes.get(query0.col);
+            Index idx = indexes.get(query0.col);
 
             if (idx == null) {
                 throw new IllegalArgumentException("Hash index not found for col=" + query0.col);

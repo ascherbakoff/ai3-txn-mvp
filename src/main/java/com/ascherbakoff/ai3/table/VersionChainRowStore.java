@@ -1,10 +1,8 @@
 package com.ascherbakoff.ai3.table;
 
 import com.ascherbakoff.ai3.clock.Timestamp;
-import com.ascherbakoff.ai3.lock.LockTable;
 import java.util.Collections;
 import java.util.Iterator;
-import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -15,13 +13,8 @@ import org.jetbrains.annotations.Nullable;
  * TODO remove a specific version.
  * @param <T>
  */
-class VersionChainRowStore<T> implements RowStore<VersionChain<T>, T>, Lockable {
+class VersionChainRowStore<T> implements RowStore<VersionChain<T>, T> {
     private Set<VersionChain<T>> heads = Collections.newSetFromMap(new ConcurrentHashMap<>());
-    private LockTable lockTable;
-
-    VersionChainRowStore(LockTable lockTable) {
-        this.lockTable = lockTable;
-    }
 
     @Override
     public T get(VersionChain<T> rowId, UUID txId, @Nullable Predicate<T> filter) {
@@ -103,10 +96,5 @@ class VersionChainRowStore<T> implements RowStore<VersionChain<T>, T>, Lockable 
                 }
             }
         };
-    }
-
-    @Override
-    public LockTable lockTable() {
-        return lockTable;
     }
 }
