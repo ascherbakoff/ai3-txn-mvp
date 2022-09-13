@@ -70,27 +70,12 @@ public class HashNonUniqueIndex implements Index {
                 futs.add(lock0.acquire(txId, LockMode.IX).thenAccept(ignored0 -> {
                     if (index.insert(newVal, rowId)) {
                         txState.addUndo(() -> index.remove(newVal, rowId));
-                    } else {
-                        throw new UniqueException("Failed to insert the row: duplicate index col=" + col + " key=" + newVal);
                     }
                 }));
             }
         }
 
         return CompletableFuture.allOf(futs.toArray(new CompletableFuture[0]));
-    }
-
-    @Override
-    public CompletableFuture remove(UUID txId, TxState txState, Tuple removed, VersionChain<Tuple> rowId) {
-        Tuple oldVal = removed.select(col);
-
-        Lock lock = lockTable.getOrAddEntry(oldVal);
-
-        txState.addLock(lock);
-
-        // Do not physically remove bookmarks from the index due to multi-versioning.
-
-        return lock.acquire(txId, LockMode.IX);
     }
 
     @Override

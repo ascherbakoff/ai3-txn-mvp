@@ -9,7 +9,7 @@ import org.jetbrains.annotations.Nullable;
 class VersionChain<T> {
     @Nullable Timestamp begin;
     @Nullable Timestamp end;
-    @Nullable T value;
+    T value;
     @Nullable
     UUID txId; // Lock holder for uncommitted version.
     @Nullable VersionChain<T> next;
@@ -109,7 +109,7 @@ class VersionChain<T> {
             return oldVal;
         }
 
-        T oldVal = val;
+        T oldVal = this.value;
 
         // Re-link.
         VersionChain<T> next0 = new VersionChain<>(txId, begin, end, value, next);

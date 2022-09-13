@@ -3,7 +3,6 @@ package com.ascherbakoff.ai3.table;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.fail;
 
 import com.ascherbakoff.ai3.clock.Timestamp;
 import com.ascherbakoff.ai3.lock.DeadlockPrevention;
@@ -54,7 +53,7 @@ public class MVStoreWithHashUniqueIndexTest extends MVStoreBasicTest {
     }
 
     @Test
-    public void testUniqueWithHistory2() {
+    public void testUniqueWithHistoryABA() {
         UUID txId = new UUID(0, 0);
         UUID txId2 = new UUID(0, 1);
         UUID txId3 = new UUID(0, 2);
@@ -75,7 +74,25 @@ public class MVStoreWithHashUniqueIndexTest extends MVStoreBasicTest {
     }
 
     @Test
-    public void testUniqueWithHistory3() {
+    public void testInsertUniqueWithUncommitted() {
+        UUID txId = new UUID(0, 0);
+        UUID txId2 = new UUID(0, 1);
+
+        VersionChain<Tuple> rowId = store.insert(Tuple.create(0, "val0"), txId).join();
+        store.commit(txId, Timestamp.now());
+
+        store.update(rowId, Tuple.create(1, "val1"), txId2).join();
+        store.update(rowId, Tuple.create(0, "val2"), txId2).join();
+
+        assertEquals(Tuple.create(0, "val2"), getByIndexUnique(txId2, 0, Tuple.create(0)));
+
+        store.commit(txId2, Timestamp.now());
+
+        assertEquals(Tuple.create(0, "val2"), getByIndexUnique(txId2, 0, Tuple.create(0)));
+    }
+
+    @Test
+    public void testUniqueWithHistoryABA_Reorder() {
         UUID txId = new UUID(0, 0);
         UUID txId2 = new UUID(0, 1);
         UUID txId3 = new UUID(0, 2);
@@ -87,17 +104,15 @@ public class MVStoreWithHashUniqueIndexTest extends MVStoreBasicTest {
         store.update(rowId, Tuple.create(1, "val1"), txId2).join();
         store.commit(txId2, Timestamp.now());
 
-        store.insert(Tuple.create(0, "val3"), txId4).join();
+        Tuple res = Tuple.create(0, "val3");
+        store.insert(res, txId4).join();
 
-//        var err = assertThrows(CompletionException.class, () -> store.insert(Tuple.create(0, "val3"), txId4).join());
-//        assertEquals(UniqueException.class, err.getCause().getClass());
-
-        store.update(rowId, Tuple.create(0, "val2"), txId3).join();
-        store.commit(txId3, Timestamp.now());
+        CompletableFuture<Tuple> fut = store.update(rowId, Tuple.create(0, "val2"), txId3);
+        assertFalse(fut.isDone());
 
         store.commit(txId4, Timestamp.now());
 
-        // TODO FIXME unique violation.
-        fail();
+        var err = assertThrows(CompletionException.class, () -> fut.join());
+        assertEquals(UniqueException.class, err.getCause().getClass());
     }
 }

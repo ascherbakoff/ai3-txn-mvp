@@ -13,6 +13,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Predicate;
 
 /**
  * TODO reduce copypaste, compact tx state
@@ -75,38 +76,14 @@ public class MVStoreImpl implements MVStore {
     }
 
     @Override
-    public CompletableFuture<Tuple> remove(VersionChain<Tuple> rowId, UUID txId) {
+    public CompletableFuture<Tuple> get(VersionChain<Tuple> rowId, UUID txId, Predicate<Tuple> filter) {
         Lock lock = lockTable.getOrAddEntry(rowId);
 
         TxState txState = localState(txId);
 
         txState.addLock(lock);
 
-        return lock.acquire(txId, LockMode.X).thenApply(ignored -> {
-            Tuple oldRow = rowStore.update(rowId, Tuple.TOMBSTONE, txId);
-
-            txState.addWrite(rowId);
-
-            List<CompletableFuture> futs = new ArrayList<>(idxCnt);
-
-            // TODO FIXME lock sorting ??? Can we get deadlocks on index updates ?.
-            for (Entry<Integer, Index> entry : indexes.entrySet()) {
-                futs.add(entry.getValue().remove(txId, txState, oldRow, rowId));
-            }
-
-            return oldRow;
-        });
-    }
-
-    @Override
-    public CompletableFuture<Tuple> get(VersionChain<Tuple> rowId, UUID txId) {
-        Lock lock = lockTable.getOrAddEntry(rowId);
-
-        TxState txState = localState(txId);
-
-        txState.addLock(lock);
-
-        return lock.acquire(txId, LockMode.S).thenApply(x -> rowId.resolve(txId, null, null));
+        return lock.acquire(txId, LockMode.S).thenApply(x -> rowId.resolve(txId, null, filter));
     }
 
     @Override

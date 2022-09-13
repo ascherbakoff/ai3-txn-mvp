@@ -125,7 +125,7 @@ public class Lock {
         if (owners.isEmpty() && !waiters.isEmpty()) {
             Locker w0 = waiters.remove(0);
 
-            w0.complete(null);
+            w0.completeAsync(() -> null);
             owners.put(w0.id, w0);
         }
     }
