@@ -163,7 +163,7 @@ public class SerializabilityTest {
             throw new RuntimeException(firstErr.get());
         }
 
-        LOG.log(Level.INFO, "After test ops= " + ops.sum() + ", fails=" + fails.sum());
+        LOG.log(Level.INFO, "After test ops=" + ops.sum() + ", fails=" + fails.sum());
 
         total0 = 0;
 

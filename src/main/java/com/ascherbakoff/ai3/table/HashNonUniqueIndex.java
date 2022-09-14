@@ -29,22 +29,6 @@ public class HashNonUniqueIndex implements Index {
     }
 
     @Override
-    public CompletableFuture<Void> insert(UUID txId, TxState txState, Tuple row, VersionChain<Tuple> rowId) {
-        Tuple newVal = row.select(col);
-
-        Lock lock = lockTable.getOrAddEntry(newVal);
-
-        txState.addLock(lock);
-
-        return lock.acquire(txId, LockMode.IX).thenAccept(ignored -> {
-            if (index.insert(newVal, rowId)) {
-                // Undo insertion only if this transactions inserts a new entry.
-                txState.addUndo(() -> index.remove(newVal, rowId));
-            }
-        });
-    }
-
-    @Override
     public CompletableFuture update(UUID txId, TxState txState, Tuple oldRow, Tuple newRow, VersionChain<Tuple> rowId) {
         Tuple oldVal = oldRow == Tuple.TOMBSTONE ? Tuple.TOMBSTONE : oldRow.select(col);
         Tuple newVal = newRow == Tuple.TOMBSTONE ? Tuple.TOMBSTONE : newRow.select(col);

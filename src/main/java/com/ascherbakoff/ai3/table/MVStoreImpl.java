@@ -46,7 +46,7 @@ public class MVStoreImpl implements MVStore {
 
         // TODO FIXME lock sorting ??? Can we get deadlocks on index updates ?.
         for (Entry<Integer, Index> entry : indexes.entrySet()) {
-            futs.add(entry.getValue().insert(txId, txState, row, rowId));
+            futs.add(entry.getValue().update(txId, txState, Tuple.TOMBSTONE, row, rowId));
         }
 
         return CompletableFuture.allOf(futs.toArray(new CompletableFuture[0])).thenApply(ignored -> rowId);
@@ -73,6 +73,11 @@ public class MVStoreImpl implements MVStore {
 
             return CompletableFuture.allOf(futs.toArray(new CompletableFuture[0])).thenApply(ignored0 -> oldRow);
         });
+    }
+
+    @Override
+    public CompletableFuture<Tuple> remove(VersionChain<Tuple> rowId, UUID txId) {
+        return update(rowId, Tuple.TOMBSTONE, txId);
     }
 
     @Override

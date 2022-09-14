@@ -51,8 +51,7 @@ public class Lock {
             // Get a supremum.
             locker.mode = LockTable.supremum(owner.mode, locker.mode);
 
-            // Check if a held lock is stronger or same as requested.
-            if (owner.mode.ordinal() >= locker.mode.ordinal() ||  // Allow reenter
+            if (owner.mode.ordinal() == locker.mode.ordinal() ||  // Allow reenter
                     compatible(locker) // Allow immediate upgrade
             ) {
                 owner.mode = locker.mode; // Overwrite locked mode.
@@ -91,7 +90,7 @@ public class Lock {
         if (locker == null)
             throw new LockException("Bad locker");
 
-        if (locker.mode.ordinal() < mode.ordinal())
+        if (LockTable.supremum(mode, locker.mode) != locker.mode)
             throw new LockException("Bad downgrade mode " + locker.mode + " -> " + mode);
 
         locker.mode = mode;
@@ -127,6 +126,18 @@ public class Lock {
 
             w0.completeAsync(() -> null);
             owners.put(w0.id, w0);
+
+            while(!waiters.isEmpty() && waiters.get(0).id.equals(w0.id)) {
+                Locker next = waiters.get(0);
+
+                LockMode supremum = LockTable.supremum(w0.mode, next.mode);
+
+                next.mode = supremum;
+                w0.mode = supremum;
+                next.completeAsync(() -> null);
+
+                waiters.remove(0);
+            }
         }
     }
 }

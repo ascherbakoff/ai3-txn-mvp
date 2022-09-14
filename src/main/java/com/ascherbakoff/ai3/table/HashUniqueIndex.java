@@ -29,36 +29,6 @@ public class HashUniqueIndex implements Index {
     }
 
     @Override
-    public CompletableFuture<Void> insert(UUID txId, TxState txState, Tuple row, VersionChain<Tuple> rowId) {
-        Tuple newVal = row.select(col);
-
-        Lock lock = lockTable.getOrAddEntry(newVal);
-
-        txState.addLock(lock);
-
-        return lock.acquire(txId, LockMode.X).thenAccept(ignored -> {
-            Cursor<VersionChain<Tuple>> rowIds = index.scan(newVal);
-
-            VersionChain<Tuple> rowId0;
-
-            while((rowId0 = rowIds.next()) != null) {
-                if (rowId0 == rowId) {
-                    continue;
-                }
-
-                // TODO FIXME LOCK IS NEEDED - a concurrent tx can insert conflicting value and commit just after check.
-                if (rowStore.get(rowId0, txId, tuple -> tuple.select(col).equals(newVal)) != null)
-                    throw new UniqueException("Failed to insert the row: duplicate index col=" + col + " key=" + newVal);
-            }
-
-            if (index.insert(newVal, rowId)) {
-                // Undo insertion only if this transactions inserts a new entry.
-                txState.addUndo(() -> index.remove(newVal, rowId));
-            }
-        });
-    }
-
-    @Override
     public CompletableFuture update(UUID txId, TxState txState, Tuple oldRow, Tuple newRow, VersionChain<Tuple> rowId) {
         Tuple oldVal = oldRow == Tuple.TOMBSTONE ? Tuple.TOMBSTONE : oldRow.select(col);
         Tuple newVal = newRow == Tuple.TOMBSTONE ? Tuple.TOMBSTONE : newRow.select(col);
@@ -76,7 +46,6 @@ public class HashUniqueIndex implements Index {
                 // Do not remove bookmarks due to multi-versioning.
             }
 
-            // TODO FIXME remove copypaste.
             if (newVal.length() > 0) {
                 Lock lock0 = lockTable.getOrAddEntry(newVal);
 
@@ -92,8 +61,8 @@ public class HashUniqueIndex implements Index {
                             continue;
                         }
 
-                        // TODO FIXME LOCK IS NEEDED
-                        if (rowStore.get(rowId0, txId, tuple -> tuple.select(col).equals(newVal)) != null) {
+                        // Read lock is not required here - we are protected from "dangerous" concurrent changes by index key lock.
+                        if (rowStore.get(rowId0, txId, tuple -> (tuple == Tuple.TOMBSTONE ? Tuple.TOMBSTONE : tuple.select(col)).equals(newVal)) != null) {
                             throw new UniqueException("Failed to insert the row: duplicate index col=" + col + " key=" + newVal);
                         }
                     }

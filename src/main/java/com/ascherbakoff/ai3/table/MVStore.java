@@ -11,6 +11,9 @@ public interface MVStore {
 
     CompletableFuture<Tuple> update(VersionChain<Tuple> rowId, Tuple newRow, UUID txId);
 
+    // Removes a row.
+    CompletableFuture<Tuple> remove(VersionChain<Tuple> rowId, UUID txId);
+
     // Run query in RW mode.
     AsyncCursor<VersionChain<Tuple>> query(Query query, UUID txId);
 

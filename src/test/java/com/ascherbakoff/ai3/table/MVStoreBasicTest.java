@@ -8,6 +8,8 @@ import com.ascherbakoff.ai3.clock.Timestamp;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 import org.jetbrains.annotations.Nullable;
 import org.junit.jupiter.api.Test;
@@ -218,6 +220,16 @@ public abstract class MVStoreBasicTest {
         assertTrue(rows.size() <= 1);
         return rows.isEmpty() ? null : rows.get(0);
     }
+
+    CompletableFuture<Tuple> getByIndexUniqueAsync(UUID txId, int col, Tuple searchKey) {
+        AsyncCursor<VersionChain<Tuple>> query = store.query(new EqQuery(col, searchKey), txId);
+        return query.loadAll(new ArrayList<>()).thenApply(heads -> {
+            List<Tuple> rows = heads.stream().map(row ->
+                    store.get(row, txId, tup -> tup == Tuple.TOMBSTONE ? false : tup.select(0).equals(searchKey)).join()).filter(t -> t != null).collect(Collectors.toList());
+            assertTrue(rows.size() <= 1);
+            return rows.isEmpty() ? null : rows.get(0);
+        });
+    };
 
     @Nullable
     Tuple getByIndexUnique(Timestamp ts, int col, Tuple searchKey) {

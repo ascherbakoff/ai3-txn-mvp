@@ -270,7 +270,7 @@ public class LockTableTest {
      * The lock sequence is IS_lock(1), IS_lock(2), IX_lock(2), X_lock(2), IS_unlock(1).
      */
     @Test
-    public void testDelayedUpgradeCompatible() {
+    public void testBlockedUpgradeCompatible() {
         Lock lock = lockTable.getOrAddEntry(0);
 
         UUID id1 = UUID.randomUUID();
@@ -298,6 +298,149 @@ public class LockTableTest {
 
         assertTrue(lock.owners.size() == 1);
         assertTrue(lock.waiters.isEmpty());
+    }
+
+    /**
+     * Tests a queue upgrade.
+     *
+     * The lock sequence is X_lock(1), X_lock(2), S_lock(2), S_unlock(1).
+     */
+    @Test
+    public void testQueuedUpgrade() {
+        Lock lock = lockTable.getOrAddEntry(0);
+
+        UUID id1 = new UUID(0, 0);
+        UUID id2 = new UUID(0, 1);
+
+        Locker l1_1 = lock.acquire(id1, LockMode.X);
+        l1_1.join();
+        assertTrue(l1_1.id == id1 && l1_1.mode == LockMode.X);
+
+        Locker l2_1 = lock.acquire(id2, LockMode.X);
+        assertFalse(l2_1.isDone());
+
+        Locker l2_2 = lock.acquire(id2, LockMode.S);
+        assertFalse(l2_2.isDone());
+
+        lock.release(l1_1);
+
+        l2_1.join();
+        l2_2.join();
+
+        assertTrue(l2_1.id == id2 && l2_2.mode == LockMode.X);
+        assertTrue(l2_2.id == id2 && l2_2.mode == LockMode.X);
+
+        lock.release(id2);
+
+        assertTrue(lock.owners.isEmpty());
+        assertTrue(lock.waiters.isEmpty());
+    }
+
+    /**
+     * Tests a queue upgrade with supremum.
+     *
+     * The lock sequence is X_lock(1), S_lock(2), IX_lock(2), S_unlock(1).
+     */
+    @Test
+    public void testBlockedUpgradeInverted2() {
+        Lock lock = lockTable.getOrAddEntry(0);
+
+        UUID id1 = UUID.randomUUID();
+        UUID id2 = UUID.randomUUID();
+
+        Locker l1_1 = lock.acquire(id1, LockMode.X);
+        l1_1.join();
+        assertTrue(l1_1.id == id1 && l1_1.mode == LockMode.X);
+
+        Locker l2_1 = lock.acquire(id2, LockMode.S);
+        assertFalse(l2_1.isDone());
+
+        Locker l2_2 = lock.acquire(id2, LockMode.IX);
+        assertFalse(l2_2.isDone());
+
+        lock.release(l1_1);
+
+        l2_1.join();
+        l2_2.join();
+
+        assertTrue(l2_1.id == id2 && l2_1.mode == LockMode.SIX);
+        assertTrue(l2_2.id == id2 && l2_2.mode == LockMode.SIX);
+
+        lock.release(id2);
+
+        assertTrue(lock.owners.isEmpty());
+        assertTrue(lock.waiters.isEmpty());
+    }
+
+    @Test
+    public void testBlockedUpgradeInverted3() {
+        Lock lock = lockTable.getOrAddEntry(0);
+
+        UUID id1 = UUID.randomUUID();
+        UUID id2 = UUID.randomUUID();
+
+        Locker l1_1 = lock.acquire(id1, LockMode.IX);
+        l1_1.join();
+        assertTrue(l1_1.id == id1 && l1_1.mode == LockMode.IX);
+
+        Locker l2_1 = lock.acquire(id2, LockMode.S);
+        assertFalse(l2_1.isDone());
+
+        Locker l2_2 = lock.acquire(id2, LockMode.X);
+        assertFalse(l2_2.isDone());
+
+        lock.release(l1_1);
+
+        l2_1.join();
+        l2_2.join();
+
+        assertTrue(l2_1.id == id2 && l2_1.mode == LockMode.X);
+        assertTrue(l2_2.id == id2 && l2_2.mode == LockMode.X);
+
+        lock.release(id2);
+
+        assertTrue(lock.owners.isEmpty());
+        assertTrue(lock.waiters.isEmpty());
+    }
+
+    /**
+     * Tests a queue upgrade.
+     *
+     * The lock sequence is X_lock(1), X_lock(2), X_lock(3), S_lock(2), S_unlock(1), X_unlock(2).
+     */
+    @Test
+    public void testQueuedUpgradeWithIntermediate() {
+        Lock lock = lockTable.getOrAddEntry(0);
+
+        UUID id1 = new UUID(0, 0);
+        UUID id2 = new UUID(0, 1);
+        UUID id3 = new UUID(0, 2);
+
+        Locker l1_1 = lock.acquire(id1, LockMode.X);
+        l1_1.join();
+        assertTrue(l1_1.id == id1 && l1_1.mode == LockMode.X);
+
+        Locker l2_1 = lock.acquire(id2, LockMode.X);
+        assertFalse(l2_1.isDone());
+
+        Locker l3_1 = lock.acquire(id3, LockMode.X);
+        assertFalse(l3_1.isDone());
+
+        Locker l2_2 = lock.acquire(id2, LockMode.S);
+        assertFalse(l2_2.isDone());
+
+        lock.release(l1_1);
+
+        l2_1.join();
+        lock.release(l2_1);
+
+        l3_1.join();
+        lock.release(l3_1);
+
+        l2_2.join();
+
+        assertTrue(l2_1.id == id2 && l2_1.mode == LockMode.X);
+        assertTrue(l2_2.id == id2 && l2_2.mode == LockMode.S);
     }
 
     /**
