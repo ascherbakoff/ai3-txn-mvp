@@ -19,9 +19,9 @@ import java.util.function.Predicate;
  * TODO reduce copypaste, compact tx state
  */
 public class MVStoreImpl implements MVStore {
-    private final VersionChainRowStore<Tuple> rowStore;
-    private final LockTable lockTable;
-    private Map<Integer, Index> indexes;
+    final VersionChainRowStore<Tuple> rowStore;
+    final LockTable lockTable;
+    Map<Integer, Index> indexes;
 
     Map<UUID, TxState> txnLocalMap = new ConcurrentHashMap<>(); // TBD add size overflow test
 

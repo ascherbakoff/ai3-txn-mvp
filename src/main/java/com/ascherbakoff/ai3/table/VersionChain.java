@@ -22,48 +22,48 @@ class VersionChain<T> {
         this.next = next;
     }
 
-    public @Nullable Timestamp getBegin() {
+    private @Nullable Timestamp getBegin() {
         return begin;
     }
 
-    public void setBegin(@Nullable Timestamp timestamp) {
+    private void setBegin(@Nullable Timestamp timestamp) {
         this.begin = timestamp;
     }
 
-    public @Nullable Timestamp getEnd() {
+    private @Nullable Timestamp getEnd() {
         return end;
     }
 
-    public void setEnd(@Nullable Timestamp end) {
+    private void setEnd(@Nullable Timestamp end) {
         this.end = end;
     }
 
-    public @Nullable T getValue() {
+    private @Nullable T getValue() {
         return value;
     }
 
-    public void setValue(@Nullable T value) {
+    private void setValue(@Nullable T value) {
         this.value = value;
     }
 
-    public @Nullable VersionChain<T> getNext() {
+    private @Nullable VersionChain<T> getNext() {
         return next;
     }
 
-    public void setNext(@Nullable VersionChain<T> next) {
+    private void setNext(@Nullable VersionChain<T> next) {
         this.next = next;
     }
 
-    public UUID getTxId() {
+    private UUID getTxId() {
         return txId;
     }
 
-    public void setTxId(@Nullable UUID txId) {
+    private void setTxId(@Nullable UUID txId) {
         this.txId = txId;
     }
 
     @Override
-    public String toString() {
+    public synchronized String toString() {
         return "VersionChain{" +
                 "begin=" + begin +
                 ", end=" + end +
@@ -73,7 +73,7 @@ class VersionChain<T> {
                 '}';
     }
 
-    @Nullable T resolve(@Nullable UUID txId, @Nullable Timestamp timestamp, @Nullable Predicate<T> filter) {
+    synchronized @Nullable T resolve(@Nullable UUID txId, @Nullable Timestamp timestamp, @Nullable Predicate<T> filter) {
         assert txId == null ^ timestamp == null;
 
         if (timestamp == null) {
@@ -100,7 +100,7 @@ class VersionChain<T> {
      * @param val The value.
      * @param txId Txn id.
      */
-    public T addWrite(T val, UUID txId) {
+    synchronized public T addWrite(T val, UUID txId) {
         assert val != null;
 
         if (txId.equals(this.txId)) {
@@ -122,7 +122,7 @@ class VersionChain<T> {
         return oldVal;
     }
 
-    public void printVersionChain() {
+    synchronized public void printVersionChain() {
         System.out.println("head=" + (long)(hashCode() & (-1)));
         System.out.println("begin=" + begin + " end=" + end + ", value=" + value);
 
@@ -135,7 +135,7 @@ class VersionChain<T> {
         }
     }
 
-    public void commitWrite(Timestamp timestamp, UUID txId) {
+    synchronized public void commitWrite(Timestamp timestamp, UUID txId) {
         assert txId.equals(this.txId);
 
         Objects.requireNonNull(timestamp);
@@ -147,7 +147,7 @@ class VersionChain<T> {
             next.end = timestamp;
     }
 
-    public void abortWrite(UUID txId) {
+    synchronized public void abortWrite(UUID txId) {
         assert txId.equals(this.txId);
         assert next != null;
 

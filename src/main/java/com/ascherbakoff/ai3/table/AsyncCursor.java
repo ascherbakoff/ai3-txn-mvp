@@ -1,5 +1,7 @@
 package com.ascherbakoff.ai3.table;
 
+import static java.util.concurrent.CompletableFuture.completedFuture;
+
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Predicate;
@@ -14,7 +16,9 @@ public interface AsyncCursor<T> {
             if (t != null)
                 x.add(t);
             return t;
-        }).thenComposeAsync(t -> t == null ? CompletableFuture.completedFuture(x) : loadAll(x));
+        }).thenComposeAsync(t -> {
+            return t == null ? completedFuture(x) : loadAll(x);
+        });
     }
 
     default CompletableFuture<Boolean> visit(Predicate<T> visitor) {
@@ -23,6 +27,6 @@ public interface AsyncCursor<T> {
                 return visitor.test(t);
             }
             return null;
-        }).thenComposeAsync(t -> t == null ? CompletableFuture.completedFuture(false) : t ? CompletableFuture.completedFuture(t) : visit(visitor));
+        }).thenComposeAsync(t -> t == null ? completedFuture(false) : t ? completedFuture(t) : visit(visitor));
     }
 }

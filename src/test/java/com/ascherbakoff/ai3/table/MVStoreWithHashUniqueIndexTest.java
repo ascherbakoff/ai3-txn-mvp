@@ -122,7 +122,7 @@ public class MVStoreWithHashUniqueIndexTest extends MVStoreBasicTest {
         UUID txId = new UUID(0, 0);
         UUID txId2 = new UUID(0, 1);
 
-        VersionChain<Tuple> rowId = store.insert(Tuple.create(0, "val0"), txId).join();
+        store.insert(Tuple.create(0, "val0"), txId).join();
 
         CompletableFuture<Tuple> fut = getByIndexUniqueAsync(txId2, 0, Tuple.create(0));
 
@@ -165,7 +165,7 @@ public class MVStoreWithHashUniqueIndexTest extends MVStoreBasicTest {
     }
 
     @Test
-    public void testInsertRemove_2TX() {
+    public void testInsertUpdateRemove_2TX() throws InterruptedException {
         UUID txId = new UUID(0, 0);
         UUID txId2 = new UUID(0, 1);
         UUID txId3 = new UUID(0, 2);
@@ -188,7 +188,7 @@ public class MVStoreWithHashUniqueIndexTest extends MVStoreBasicTest {
     }
 
     @Test
-    public void testInsertRemoveAbort_2TX() {
+    public void testInsertUpdateRemoveAbort_2TX() {
         UUID txId = new UUID(0, 0);
         UUID txId2 = new UUID(0, 1);
         UUID txId3 = new UUID(0, 2);
@@ -206,7 +206,8 @@ public class MVStoreWithHashUniqueIndexTest extends MVStoreBasicTest {
         store.abort(txId2);
 
         assertEquals(Tuple.create(0, "val0"), fut.join());
-        assertNull(fut2.join());
+        fut2.join(); // Both futures are concurrent
+        assertNull(getByIndexUnique(txId3, 0, Tuple.create(0)));
     }
 
     @Test
@@ -228,7 +229,8 @@ public class MVStoreWithHashUniqueIndexTest extends MVStoreBasicTest {
         store.commit(txId2, Timestamp.now());
 
         fut.join();
-        assertNull(fut2.join());
+        fut2.join();
+        assertEquals(Tuple.create(0, "val1"), getByIndexUnique(txId3, 0, Tuple.create(0)));
     }
 
     @Test

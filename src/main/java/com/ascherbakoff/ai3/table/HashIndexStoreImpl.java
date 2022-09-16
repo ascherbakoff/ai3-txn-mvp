@@ -1,7 +1,6 @@
 package com.ascherbakoff.ai3.table;
 
 import java.util.Collections;
-import java.util.HashSet;
 import java.util.Iterator;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -18,7 +17,7 @@ class HashIndexStoreImpl<T> implements HashIndexStore<T> {
         Set<T> vals = data.get(key);
 
         if (vals == null) {
-            vals = Collections.emptySet();
+            return Cursor.EMPTY;
         }
 
         Iterator<T> iter = vals.iterator();
@@ -41,7 +40,7 @@ class HashIndexStoreImpl<T> implements HashIndexStore<T> {
 
         data.compute(key, (tuple, ts) -> {
             if (ts == null) {
-                ts = new HashSet<>();
+                ts = Collections.newSetFromMap(new ConcurrentHashMap<>());
             }
 
             inserted[0] = ts.add(rowId);
@@ -57,7 +56,7 @@ class HashIndexStoreImpl<T> implements HashIndexStore<T> {
         final boolean[] removed = new boolean[1];
 
         data.compute(key, (tuple, ts) -> {
-            boolean st = ts.remove(rowId);
+            boolean st = ts != null ? ts.remove(rowId) : false;
 
             removed[0] = st;
 

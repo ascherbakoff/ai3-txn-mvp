@@ -9,6 +9,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionStage;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import org.jetbrains.annotations.Nullable;
@@ -223,11 +224,29 @@ public abstract class MVStoreBasicTest {
 
     CompletableFuture<Tuple> getByIndexUniqueAsync(UUID txId, int col, Tuple searchKey) {
         AsyncCursor<VersionChain<Tuple>> query = store.query(new EqQuery(col, searchKey), txId);
-        return query.loadAll(new ArrayList<>()).thenApply(heads -> {
-            List<Tuple> rows = heads.stream().map(row ->
-                    store.get(row, txId, tup -> tup == Tuple.TOMBSTONE ? false : tup.select(0).equals(searchKey)).join()).filter(t -> t != null).collect(Collectors.toList());
-            assertTrue(rows.size() <= 1);
-            return rows.isEmpty() ? null : rows.get(0);
+        return query.loadAll(new ArrayList<>()).thenCompose(new Function<List<VersionChain<Tuple>>, CompletionStage<Tuple>>() {
+            @Override
+            public CompletableFuture<Tuple> apply(List<VersionChain<Tuple>> heads) {
+                CompletableFuture<List<Tuple>> f = CompletableFuture.completedFuture(new ArrayList<>());
+
+                for (VersionChain<Tuple> rowId : heads) {
+                    f = f.thenCompose(res -> {
+                        return store.get(rowId, txId, tup -> tup == Tuple.TOMBSTONE ? false : tup.select(0).equals(searchKey))
+                                .thenApply(t -> {
+                                    if (t != null) {
+                                        res.add(t);
+                                    }
+
+                                    return res;
+                                });
+                    });
+                }
+
+                return f.thenApply(rows -> {
+                    assertTrue(rows.size() <= 1);
+                    return rows.isEmpty() ? null : rows.get(0);
+                });
+            }
         });
     };
 

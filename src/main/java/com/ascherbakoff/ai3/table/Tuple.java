@@ -20,18 +20,18 @@ package com.ascherbakoff.ai3.table;
 /**
  *
  */
-public interface Tuple {
+public interface Tuple extends Comparable<Tuple> {
     static Tuple TOMBSTONE = Tuple.create();
 
     <T> T get(int index);
 
-    void set(int index, Object value);
+    void set(int index, Comparable value);
 
     int length();
 
     Tuple select(int... indexes);
 
-    public static Tuple create(Object... values) {
+    public static Tuple create(Comparable... values) {
         return new TupleImpl(values);
     }
 }

@@ -18,14 +18,15 @@
 package com.ascherbakoff.ai3.table;
 
 import java.util.Arrays;
+import org.jetbrains.annotations.NotNull;
 
 /**
  * Simple tuple implementation.
  */
 class TupleImpl implements Tuple {
-    private final Object[] values;
+    private final Comparable[] values;
 
-    TupleImpl(Object... values) {
+    TupleImpl(Comparable... values) {
         this.values = values;
     }
 
@@ -35,7 +36,7 @@ class TupleImpl implements Tuple {
     }
 
     @Override
-    public void set(int index, Object value) {
+    public void set(int index, Comparable value) {
         values[index] = value;
     }
 
@@ -46,7 +47,7 @@ class TupleImpl implements Tuple {
 
     @Override
     public Tuple select(int... indexes) {
-        Object[] tmp = new Object[indexes.length];
+        Comparable[] tmp = new Comparable[indexes.length];
 
         for (int i = 0; i < indexes.length; i++) {
             tmp[i] = values[indexes[i]];
@@ -77,6 +78,15 @@ class TupleImpl implements Tuple {
     @Override
     public int hashCode() {
         return Arrays.hashCode(values);
+    }
+
+    @Override
+    public int compareTo(@NotNull Tuple o) {
+        TupleImpl tuple = (TupleImpl) o;
+
+        assert length() == tuple.length();
+
+        return Arrays.compare(values, tuple.values);
     }
 
     @Override
