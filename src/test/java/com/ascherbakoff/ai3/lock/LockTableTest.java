@@ -1,6 +1,8 @@
 package com.ascherbakoff.ai3.lock;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.EnumSet;
@@ -123,11 +125,11 @@ public class LockTableTest {
         UUID id1 = UUID.randomUUID();
 
         Locker l1 = lock.acquire(id1, LockMode.X);
-        l1.join();
+        assertNull(l1.join());
         assertTrue(l1.id == id1 && l1.mode == LockMode.X);
 
         Locker l2 = lock.acquire(id1, lockMode);
-        l2.join();
+        assertEquals(LockMode.X, l2.join());
         assertTrue(l2.id == id1 && l2.mode == LockMode.X);
 
         assertTrue(lock.owners.size() == 1);
@@ -195,6 +197,75 @@ public class LockTableTest {
         assertTrue(lock.waiters.isEmpty());
 
         lock.release(l3); // We hold X lock
+
+        assertTrue(lock.owners.isEmpty());
+        assertTrue(lock.waiters.isEmpty());
+    }
+
+    /**
+     * Tests direct upgrade IS_lock(1), IS_lock(2), IX_lock(1), IS_unlock(2), X_lock(1).
+     */
+    @Test
+    public void testDirectUpgradeMulti2() {
+        Lock lock = lockTable.getOrAddEntry(0);
+
+        UUID id1 = UUID.randomUUID();
+        UUID id2 = UUID.randomUUID();
+
+        Locker l1_1 = lock.acquire(id1, LockMode.IS);
+        l1_1.join();
+        assertTrue(l1_1.id == id1 && l1_1.mode == LockMode.IS);
+
+        Locker l2_1 = lock.acquire(id2, LockMode.IS);
+        l2_1.join();
+        assertTrue(l2_1.id == id2 && l2_1.mode == LockMode.IS);
+
+        Locker l1_2 = lock.acquire(id1, LockMode.IX);
+        l1_2.join();
+        assertTrue(l1_2.id == id1 && l1_2.mode == LockMode.IX);
+
+        Locker l1_3 = lock.acquire(id1, LockMode.X);
+        assertFalse(l1_3.isDone());
+
+        lock.release(l2_1);
+
+        l1_3.join();
+        assertTrue(l1_3.id == id1 && l1_3.mode == LockMode.X);
+
+        lock.release(l1_3);
+
+        assertTrue(lock.owners.isEmpty());
+        assertTrue(lock.waiters.isEmpty());
+    }
+
+    @Test
+    public void testDirectUpgradeMulti3() {
+        Lock lock = lockTable.getOrAddEntry(0);
+
+        UUID id1 = UUID.randomUUID();
+        UUID id2 = UUID.randomUUID();
+
+        Locker l1_1 = lock.acquire(id1, LockMode.IX);
+        l1_1.join();
+        assertTrue(l1_1.id == id1 && l1_1.mode == LockMode.IX);
+
+        Locker l2_1 = lock.acquire(id2, LockMode.IS);
+        l2_1.join();
+        assertTrue(l2_1.id == id2 && l2_1.mode == LockMode.IS);
+
+        Locker l1_2 = lock.acquire(id1, LockMode.S);
+        l1_2.join();
+        assertTrue(l1_2.id == id1 && l1_2.mode == LockMode.SIX);
+
+        Locker l1_3 = lock.acquire(id1, LockMode.X);
+        assertFalse(l1_3.isDone());
+
+        lock.release(l2_1);
+
+        l1_3.join();
+        assertTrue(l1_3.id == id1 && l1_3.mode == LockMode.X);
+
+        lock.release(l1_3);
 
         assertTrue(lock.owners.isEmpty());
         assertTrue(lock.waiters.isEmpty());
@@ -467,6 +538,36 @@ public class LockTableTest {
         assertTrue(lock.waiters.isEmpty());
 
         lock.release(l2);
+        assertTrue(lock.owners.isEmpty());
+    }
+
+    /**
+     * Tests a upgrade downgrade scneraio.
+     *
+     * @param lockMode Lock mode.
+     */
+    @Test
+    public void testUpgradeDowngrade() {
+        Lock lock = lockTable.getOrAddEntry(0);
+
+        UUID id1 = UUID.randomUUID();
+
+        Locker l1_1 = lock.acquire(id1, LockMode.S);
+        assertNull(l1_1.join());
+        assertTrue(l1_1.id == id1 && l1_1.mode == LockMode.S);
+
+        Locker l1_2 = lock.acquire(id1, LockMode.IX);
+        assertEquals(LockMode.S, l1_2.join());
+        assertTrue(l1_2.id == id1 && l1_2.mode == LockMode.SIX);
+
+        Locker l1_3 = lock.downgrade(id1, LockMode.S);
+        assertTrue(l1_3.isDone());
+        assertTrue(l1_3.id == id1 && l1_3.mode == LockMode.S);
+
+        assertTrue(lock.owners.size() == 1);
+        assertTrue(lock.waiters.isEmpty());
+
+        lock.release(l1_3);
         assertTrue(lock.owners.isEmpty());
     }
 

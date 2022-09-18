@@ -60,7 +60,7 @@ class HashIndexStoreImpl<T> implements HashIndexStore<T> {
 
             removed[0] = st;
 
-            return ts;
+            return st ? ts.isEmpty() ? null : ts : ts;
         });
 
         return removed[0];

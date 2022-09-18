@@ -36,7 +36,7 @@ public interface Cursor<T> {
             @Nullable
             @Override
             public T next() {
-                if (iter.hasNext())
+                if (!iter.hasNext())
                     return null;
 
                 return iter.next();

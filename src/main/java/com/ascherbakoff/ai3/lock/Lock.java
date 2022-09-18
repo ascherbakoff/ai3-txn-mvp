@@ -27,16 +27,17 @@ public class Lock {
     }
 
     /**
-     * @param locker
      * @return True if a locker is compatible with all owners.
      */
     private boolean compatible(Locker locker) {
         for (Entry<UUID, Locker> e : owners.entrySet()) {
-            if (e.getKey().equals(locker.id))
+            if (e.getKey().equals(locker.id)) {
                 continue;
+            }
 
-            if (!e.getValue().mode.compatible(locker.mode))
+            if (!e.getValue().mode.compatible(locker.mode)) {
                 return false;
+            }
         }
 
         return true;
@@ -48,17 +49,19 @@ public class Lock {
         Locker owner = owners.get(lockerId);
 
         if (owner != null) {
-            // Get a supremum.
-            locker.mode = LockTable.supremum(owner.mode, locker.mode);
+            LockMode cur = owner.mode;
 
-            if (owner.mode.ordinal() == locker.mode.ordinal() ||  // Allow reenter
-                    compatible(locker) // Allow immediate upgrade
-            ) {
+            // Can reenter if a requested mode is the same or weaker than the held mode
+            // Can upgrade if a requested mode is compatible with already held locks by other lockers
+            if (owner.mode == (locker.mode = LockTable.supremum(owner.mode, locker.mode)) || compatible(locker)) {
+                Locker locker0 = new Locker(lockerId, locker.mode);
+                locker0.complete(cur);
                 owner.mode = locker.mode; // Overwrite locked mode.
-                return owner;
+                return locker0;
             } else {
-                if (prevention.forceOrder && maxVersion != null && maxVersion.compareTo(lockerId) < 0)
+                if (prevention.forceOrder && maxVersion != null && maxVersion.compareTo(lockerId) < 0) {
                     throw new LockException("Invalid lock order " + maxVersion + " -> " + lockerId);
+                }
 
                 waiters.add(locker);
                 return locker;
@@ -66,8 +69,9 @@ public class Lock {
         }
 
         if (!compatible(locker)) {
-            if (prevention.forceOrder && maxVersion != null && maxVersion.compareTo(lockerId) < 0)
+            if (prevention.forceOrder && maxVersion != null && maxVersion.compareTo(lockerId) < 0) {
                 throw new LockException("Invalid lock order " + maxVersion + " -> " + lockerId);
+            }
 
             waiters.add(locker);
 
@@ -78,8 +82,9 @@ public class Lock {
         locker.complete(null);
         owners.put(lockerId, locker);
 
-        if (maxVersion == null || lockerId.compareTo(maxVersion) < 0)
+        if (maxVersion == null || lockerId.compareTo(maxVersion) < 0) {
             maxVersion = lockerId;
+        }
 
         return locker;
     }
@@ -87,11 +92,13 @@ public class Lock {
     public synchronized Locker downgrade(UUID lockerId, LockMode mode) {
         Locker locker = owners.get(lockerId);
 
-        if (locker == null)
+        if (locker == null) {
             throw new LockException("Bad locker");
+        }
 
-        if (LockTable.supremum(mode, locker.mode) != locker.mode)
+        if (LockTable.supremum(mode, locker.mode) != locker.mode) {
             throw new LockException("Bad downgrade mode " + locker.mode + " -> " + mode);
+        }
 
         locker.mode = mode;
 
@@ -105,8 +112,9 @@ public class Lock {
     public synchronized void release(UUID id) throws LockException {
         Locker removed = owners.remove(id);
 
-        if (removed == null)
+        if (removed == null) {
             throw new LockException("Bad locker");
+        }
 
         // Handle delayed upgrade/reenter
         if (owners.size() == 1 && !waiters.isEmpty()) {
@@ -127,14 +135,14 @@ public class Lock {
             w0.completeAsync(() -> null);
             owners.put(w0.id, w0);
 
-            while(!waiters.isEmpty() && waiters.get(0).id.equals(w0.id)) {
+            while (!waiters.isEmpty() && waiters.get(0).id.equals(w0.id)) {
                 Locker next = waiters.get(0);
 
-                LockMode supremum = LockTable.supremum(w0.mode, next.mode);
-
+                LockMode prev = w0.mode;
+                LockMode supremum = LockTable.supremum(prev, next.mode);
                 next.mode = supremum;
                 w0.mode = supremum;
-                next.completeAsync(() -> null);
+                next.completeAsync(() -> prev);
 
                 waiters.remove(0);
             }

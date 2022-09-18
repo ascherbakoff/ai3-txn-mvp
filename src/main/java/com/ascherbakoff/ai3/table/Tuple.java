@@ -22,6 +22,7 @@ package com.ascherbakoff.ai3.table;
  */
 public interface Tuple extends Comparable<Tuple> {
     static Tuple TOMBSTONE = Tuple.create();
+    static Tuple INF = Tuple.create();
 
     <T> T get(int index);
 
