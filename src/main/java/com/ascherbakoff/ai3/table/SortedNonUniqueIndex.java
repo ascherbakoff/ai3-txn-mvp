@@ -10,6 +10,7 @@ import java.util.List;
 import java.util.Map.Entry;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.atomic.AtomicReference;
 
 public class SortedNonUniqueIndex implements Index {
     int col;
@@ -48,24 +49,39 @@ public class SortedNonUniqueIndex implements Index {
             }
 
             if (newVal.length() > 0) {
-                Tuple lockKey = index.nextKey(newVal);
+                Tuple nextKey = index.nextKey(newVal);
 
-                if (lockKey == null)
-                    lockKey = Tuple.INF;
+                if (nextKey == null)
+                    nextKey = Tuple.INF;
 
-                Lock lock0 = lockTable.getOrAddEntry(lockKey);
+                Lock lock0 = lockTable.getOrAddEntry(nextKey);
 
                 txState.addLock(lock0);
 
                 Locker locker = lock0.acquire(txId, LockMode.IX);
 
-                futs.add(locker.thenAccept(lockMode -> {
+                futs.add(locker.thenCompose(lockMode -> {
                     if (index.insert(newVal, rowId)) {
                         txState.addUndo(() -> index.remove(newVal, rowId));
                     }
 
-                    if (lockMode != LockMode.IX) // Lock was upgraded.
-                        lock0.downgrade(txId, lockMode);
+                    if (lockMode != null && lockMode != LockMode.IX) { // Lock was upgraded.
+                        LockMode mode = lock0.downgrade(txId, lockMode);
+
+                        assert lockMode == mode : lockMode + "->" + mode;
+                    }
+                    else {
+                        lock0.release(txId);
+                        txState.locks.remove(lock0);
+                    }
+
+                    Lock lock1 = lockTable.getOrAddEntry(newVal);
+
+                    txState.addLock(lock1);
+
+                    LockMode mode = lockMode == LockMode.S || lockMode == LockMode.X || lockMode == LockMode.SIX ? LockMode.X : LockMode.IX;
+
+                    return lock1.acquire(txId, mode);
                 }));
             }
         }
@@ -75,32 +91,62 @@ public class SortedNonUniqueIndex implements Index {
 
     @Override
     public AsyncCursor<VersionChain<Tuple>> eq(UUID txId, TxState txState, EqQuery query0) {
-//        AtomicReference<Cursor<VersionChain<Tuple>>> first = new AtomicReference<>();
-//
-//        return new AsyncCursor<VersionChain<Tuple>>() {
-//            @Override
-//            public CompletableFuture<VersionChain<Tuple>> nextAsync() {
-//                Cursor<VersionChain<Tuple>> iter = first.get();
-//                if (iter == null) {
-//                    Lock lock = lockTable.getOrAddEntry(query0.queryKey);
-//
-//                    txState.addLock(lock);
-//
-//                    return lock.acquire(txId, LockMode.S).thenApply(ignored -> {
-//                        Cursor<VersionChain<Tuple>> iter0 = index.scan(query0.queryKey);
-//
-//                        first.set(iter0);
-//
-//                        return iter0.next();
-//                    });
-//                } else {
-//                    VersionChain<Tuple> tup = iter.next();
-//
-//                    return CompletableFuture.completedFuture(tup);
-//                }
-//            }
-//        };
+        AtomicReference<Cursor<VersionChain<Tuple>>> first = new AtomicReference<>();
 
-        return null;
+        return new AsyncCursor<VersionChain<Tuple>>() {
+            @Override
+            public CompletableFuture<VersionChain<Tuple>> nextAsync() {
+                Cursor<VersionChain<Tuple>> iter = first.get();
+                if (iter == null) {
+                    Lock lock = lockTable.getOrAddEntry(query0.queryKey);
+
+                    txState.addLock(lock);
+
+                    return lock.acquire(txId, LockMode.S).thenApply(ignored -> {
+                        Cursor<Entry<Tuple, Cursor<VersionChain<Tuple>>>> cur = index.scan(query0.queryKey, true, query0.queryKey, true);
+
+                        Entry<Tuple, Cursor<VersionChain<Tuple>>> next = cur.next();
+
+                        Cursor<VersionChain<Tuple>> cur0 = Cursor.EMPTY;
+
+                        if (next != null) {
+                            assert next.getKey().equals(query0.queryKey);
+
+                            cur0 = next.getValue();
+                        }
+
+                        first.set(cur0);
+
+                        return cur0.next();
+                    });
+                } else {
+                    VersionChain<Tuple> tup = iter.next();
+
+                    return CompletableFuture.completedFuture(tup);
+                }
+            }
+        };
+    }
+
+    @Override
+    public AsyncCursor<Entry<Tuple, Cursor<VersionChain<Tuple>>>> range(UUID txId, TxState txState, RangeQuery query0) {
+        Cursor<Entry<Tuple, Cursor<VersionChain<Tuple>>>> cur = index.scan(query0.lowerKey, query0.lowerInclusive, query0.upperKey, query0.upperInclusive);
+
+        return new AsyncCursor<Entry<Tuple, Cursor<VersionChain<Tuple>>>>() {
+            @Override
+            public CompletableFuture<Entry<Tuple, Cursor<VersionChain<Tuple>>>> nextAsync() {
+                Cursor<Entry<Tuple, Cursor<VersionChain<Tuple>>>> iter = cur;
+
+                Entry<Tuple, Cursor<VersionChain<Tuple>>> next = iter.next();
+
+                Tuple lockKey = next == null ? Tuple.INF : next.getKey();
+
+                Lock lock = lockTable.getOrAddEntry(lockKey);
+
+                txState.addLock(lock);
+
+                return lock.acquire(txId, LockMode.S).thenApply(ignored -> next);
+            }
+        };
     }
 }

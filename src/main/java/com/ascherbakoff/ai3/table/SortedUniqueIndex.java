@@ -6,6 +6,7 @@ import com.ascherbakoff.ai3.lock.LockTable;
 import com.ascherbakoff.ai3.table.MVStoreImpl.TxState;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map.Entry;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicReference;
@@ -105,5 +106,10 @@ public class SortedUniqueIndex implements Index {
                 return null;
             }
         };
+    }
+
+    @Override
+    public AsyncCursor<Entry<Tuple, Cursor<VersionChain<Tuple>>>> range(UUID txId, TxState txState, RangeQuery query0) {
+        return null;
     }
 }

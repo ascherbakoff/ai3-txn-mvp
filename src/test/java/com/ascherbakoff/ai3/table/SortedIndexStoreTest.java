@@ -44,8 +44,6 @@ public class SortedIndexStoreTest {
         assertTrue(idx.remove(t4, 5));
 
         assertTrue(idx.data.isEmpty());
-
-        //assertTrue(idx.data.isEmpty());
     }
 
     @Test

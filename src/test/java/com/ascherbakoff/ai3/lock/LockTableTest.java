@@ -530,14 +530,12 @@ public class LockTableTest {
         l1.join();
         assertTrue(l1.id == id1 && l1.mode == LockMode.X);
 
-        Locker l2 = lock.downgrade(id1, lockMode);
-        assertTrue(l2.isDone());
-        assertTrue(l2.id == id1 && l2.mode == lockMode);
+        assertEquals(LockMode.X, lock.downgrade(id1, lockMode));
 
         assertTrue(lock.owners.size() == 1);
         assertTrue(lock.waiters.isEmpty());
 
-        lock.release(l2);
+        lock.release(id1);
         assertTrue(lock.owners.isEmpty());
     }
 
@@ -560,15 +558,31 @@ public class LockTableTest {
         assertEquals(LockMode.S, l1_2.join());
         assertTrue(l1_2.id == id1 && l1_2.mode == LockMode.SIX);
 
-        Locker l1_3 = lock.downgrade(id1, LockMode.S);
-        assertTrue(l1_3.isDone());
-        assertTrue(l1_3.id == id1 && l1_3.mode == LockMode.S);
+        assertEquals(LockMode.SIX, lock.downgrade(id1, LockMode.S));
 
         assertTrue(lock.owners.size() == 1);
         assertTrue(lock.waiters.isEmpty());
 
-        lock.release(l1_3);
+        lock.release(id1);
         assertTrue(lock.owners.isEmpty());
+    }
+
+    @Test
+    public void testDowngradeToWeaker() {
+        Lock lock = lockTable.getOrAddEntry(0);
+
+        UUID id1 = UUID.randomUUID();
+        UUID id2 = UUID.randomUUID();
+
+        Locker l1 = lock.acquire(id1, LockMode.X);
+        l1.join();
+        assertTrue(l1.id == id1 && l1.mode == LockMode.X);
+
+        Locker l2 = lock.acquire(id2, LockMode.IX);
+        assertFalse(l2.isDone());
+
+        assertEquals(LockMode.X, lock.downgrade(id1, LockMode.IS));
+        assertTrue(l2.isDone()); // TODO FIXME !
     }
 
     @Test

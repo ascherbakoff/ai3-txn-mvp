@@ -89,7 +89,7 @@ public class Lock {
         return locker;
     }
 
-    public synchronized Locker downgrade(UUID lockerId, LockMode mode) {
+    public synchronized LockMode downgrade(UUID lockerId, LockMode mode) {
         Locker locker = owners.get(lockerId);
 
         if (locker == null) {
@@ -100,9 +100,11 @@ public class Lock {
             throw new LockException("Bad downgrade mode " + locker.mode + " -> " + mode);
         }
 
-        locker.mode = mode;
+        LockMode tmp = locker.mode;
 
-        return locker;
+        locker.mode = mode; // TBD queued lockers can request new lock for weaker mode
+
+        return tmp;
     }
 
     public synchronized void release(Locker locker) throws LockException {
