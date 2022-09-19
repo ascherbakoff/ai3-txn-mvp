@@ -54,34 +54,34 @@ public class SortedNonUniqueIndex implements Index {
                 if (nextKey == null)
                     nextKey = Tuple.INF;
 
-                Lock lock0 = lockTable.getOrAddEntry(nextKey);
+                Lock nextLock = lockTable.getOrAddEntry(nextKey);
 
-                txState.addLock(lock0);
+                txState.addLock(nextLock);
 
-                Locker locker = lock0.acquire(txId, LockMode.IX);
+                Locker locker = nextLock.acquire(txId, LockMode.IX);
 
                 futs.add(locker.thenCompose(lockMode -> {
-                    if (index.insert(newVal, rowId)) {
-                        txState.addUndo(() -> index.remove(newVal, rowId));
-                    }
+                    Lock curLock = lockTable.getOrAddEntry(newVal);
 
-                    if (lockMode != null && lockMode != LockMode.IX) { // Lock was upgraded.
-                        LockMode mode = lock0.downgrade(txId, lockMode);
-
-                        assert lockMode == mode : lockMode + "->" + mode;
-                    }
-                    else {
-                        lock0.release(txId);
-                        txState.locks.remove(lock0);
-                    }
-
-                    Lock lock1 = lockTable.getOrAddEntry(newVal);
-
-                    txState.addLock(lock1);
+                    txState.addLock(curLock);
 
                     LockMode mode = lockMode == LockMode.S || lockMode == LockMode.X || lockMode == LockMode.SIX ? LockMode.X : LockMode.IX;
 
-                    return lock1.acquire(txId, mode);
+                    return curLock.acquire(txId, mode).thenAccept(ignored -> {
+                        if (index.insert(newVal, rowId)) {
+                            txState.addUndo(() -> index.remove(newVal, rowId));
+                        }
+
+                        if (lockMode != null && lockMode != LockMode.IX) { // Lock was upgraded.
+                            LockMode mode0 = nextLock.downgrade(txId, lockMode);
+
+                            assert lockMode == mode0 : lockMode + "->" + mode0;
+                        }
+                        else {
+                            nextLock.release(txId);
+                            txState.locks.remove(nextLock);
+                        }
+                    });
                 }));
             }
         }
