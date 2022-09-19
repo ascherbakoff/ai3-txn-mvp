@@ -44,7 +44,7 @@ public class SortedUniqueIndex implements Index {
 
                 txState.addLock(lock0);
 
-                futs.add(lock0.acquire(txId, LockMode.IX));
+                futs.add(lock0.acquire(txId, LockMode.X));
 
                 // Do not remove bookmarks due to multi-versioning.
             }
@@ -67,6 +67,10 @@ public class SortedUniqueIndex implements Index {
                     txState.addLock(lock1);
 
                     return lock1.acquire(txId, LockMode.X).thenAccept(ignored -> {
+                        if (index.insert(newVal, rowId)) {
+                            txState.addUndo(() -> index.remove(newVal, rowId));
+                        }
+
                         Cursor<Entry<Tuple, Cursor<VersionChain<Tuple>>>> cur = index.scan(newVal, true, newVal, true);
 
                         Entry<Tuple, Cursor<VersionChain<Tuple>>> next0 = cur.next();
@@ -86,10 +90,6 @@ public class SortedUniqueIndex implements Index {
                             if (rowStore.get(rowId0, txId, tuple -> (tuple == Tuple.TOMBSTONE ? Tuple.TOMBSTONE : tuple.select(col)).equals(newVal)) != null) {
                                 throw new UniqueException("Failed to insert the row: duplicate index col=" + col + " key=" + newVal);
                             }
-                        }
-
-                        if (index.insert(newVal, rowId)) {
-                            txState.addUndo(() -> index.remove(newVal, rowId));
                         }
 
                         if (lockMode != null && lockMode != LockMode.IX) { // Lock was upgraded.

@@ -4,14 +4,14 @@ import com.ascherbakoff.ai3.lock.DeadlockPrevention;
 import com.ascherbakoff.ai3.lock.LockTable;
 import java.util.Map;
 
-public class MVStoreWithHashUniqueIndexTest extends MVStoreWithUniqueIndexBasicTest {
-    public MVStoreWithHashUniqueIndexTest() {
+public class MVStoreWithSortedUniqueIndexTest extends MVStoreWithUniqueIndexBasicTest {
+    public MVStoreWithSortedUniqueIndexTest() {
         {
             VersionChainRowStore<Tuple> rowStore = new VersionChainRowStore<>();
             store = new MVStoreImpl(
                     rowStore,
                     new LockTable(10, true, DeadlockPrevention.none()),
-                    Map.of(0, new HashUniqueIndex(0, new LockTable(10, true, DeadlockPrevention.none()), new HashIndexStoreImpl<>(), rowStore))
+                    Map.of(0, new SortedUniqueIndex(0, new LockTable(10, true, DeadlockPrevention.none()), new SortedIndexStoreImpl<>(), rowStore))
             );
         }
     }
