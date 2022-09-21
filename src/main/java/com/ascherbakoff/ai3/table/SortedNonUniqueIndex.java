@@ -10,7 +10,7 @@ import java.util.List;
 import java.util.Map.Entry;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
-import org.jetbrains.annotations.Nullable;
+import java.util.concurrent.atomic.AtomicReference;
 
 public class SortedNonUniqueIndex implements Index {
     int col;
@@ -99,10 +99,12 @@ public class SortedNonUniqueIndex implements Index {
         Cursor<Entry<Tuple, Cursor<VersionChain<Tuple>>>> cur = index
                 .scan(query0.lowerKey, query0.lowerInclusive, query0.upperKey, query0.upperInclusive);
 
+        AtomicReference<Cursor<VersionChain<Tuple>>> ref = new AtomicReference<>();
+
         return new AsyncCursor<VersionChain<Tuple>>() {
             @Override
             public CompletableFuture<VersionChain<Tuple>> nextAsync() {
-                return getNext(query0, txId, txState, cur, null);
+                return getNext(query0, txId, txState, cur, ref);
             }
         };
     }
@@ -111,10 +113,10 @@ public class SortedNonUniqueIndex implements Index {
             RangeQuery query0, UUID txId,
             TxState txState,
             Cursor<Entry<Tuple, Cursor<VersionChain<Tuple>>>> iter,
-            @Nullable Cursor<VersionChain<Tuple>> iter0
+            AtomicReference<Cursor<VersionChain<Tuple>>> ref
     ) {
-        if (iter0 != null) {
-            VersionChain<Tuple> tup = iter0.next();
+        if (ref.get() != null) {
+            VersionChain<Tuple> tup = ref.get().next();
 
             if (tup != null)
                 return CompletableFuture.completedFuture(tup);
@@ -137,9 +139,11 @@ public class SortedNonUniqueIndex implements Index {
             if (index.contains(lockKey)) {
                 Cursor<VersionChain<Tuple>> value = next.getValue();
 
-                return getNext(query0, txId, txState, iter, value);
+                ref.set(value);
+
+                return getNext(query0, txId, txState, iter, ref);
             } else {
-                return getNext(query0, txId, txState, iter, null);
+                return getNext(query0, txId, txState, iter, ref);
             }
         });
     }

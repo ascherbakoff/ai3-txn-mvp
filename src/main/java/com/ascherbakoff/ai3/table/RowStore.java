@@ -1,7 +1,6 @@
 package com.ascherbakoff.ai3.table;
 
 import com.ascherbakoff.ai3.clock.Timestamp;
-import java.util.Optional;
 import java.util.UUID;
 import java.util.function.Predicate;
 import org.jetbrains.annotations.Nullable;

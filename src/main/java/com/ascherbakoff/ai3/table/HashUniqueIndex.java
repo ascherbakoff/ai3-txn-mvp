@@ -4,30 +4,19 @@ import com.ascherbakoff.ai3.lock.Lock;
 import com.ascherbakoff.ai3.lock.LockMode;
 import com.ascherbakoff.ai3.lock.LockTable;
 import com.ascherbakoff.ai3.table.MVStoreImpl.TxState;
-import java.util.AbstractMap.SimpleEntry;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map.Entry;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.atomic.AtomicReference;
 
-public class HashUniqueIndex implements Index {
-    int col;
-    LockTable lockTable;
-    HashIndexStore<VersionChain<Tuple>> index;
-    VersionChainRowStore<Tuple> rowStore;
-
+public class HashUniqueIndex extends HashNonUniqueIndex {
     public HashUniqueIndex(
             int col,
             LockTable lockTable,
             HashIndexStore<VersionChain<Tuple>> index,
             VersionChainRowStore<Tuple> rowStore
     ) {
-        this.col = col;
-        this.lockTable = lockTable;
-        this.index = index;
-        this.rowStore = rowStore;
+        super(col, lockTable, index, rowStore);
     }
 
     @Override
@@ -77,39 +66,5 @@ public class HashUniqueIndex implements Index {
         }
 
         return CompletableFuture.allOf(futs.toArray(new CompletableFuture[0]));
-    }
-
-    @Override
-    public AsyncCursor<VersionChain<Tuple>> eq(UUID txId, TxState txState, EqQuery query0) {
-        AtomicReference<Cursor<VersionChain<Tuple>>> first = new AtomicReference<>();
-
-        return new AsyncCursor<VersionChain<Tuple>>() {
-            @Override
-            public CompletableFuture<VersionChain<Tuple>> nextAsync() {
-                Cursor<VersionChain<Tuple>> iter = first.get();
-                if (iter == null) {
-                    Lock lock = lockTable.getOrAddEntry(query0.queryKey);
-
-                    txState.addLock(lock);
-
-                    return lock.acquire(txId, LockMode.S).thenApply(ignored -> {
-                        Cursor<VersionChain<Tuple>> iter0 = index.scan(query0.queryKey);
-
-                        first.set(iter0);
-
-                        return iter0.next();
-                    });
-                } else {
-                    VersionChain<Tuple> tup = iter.next();
-
-                    return CompletableFuture.completedFuture(tup);
-                }
-            }
-        };
-    }
-
-    @Override
-    public AsyncCursor<VersionChain<Tuple>> range(UUID txId, TxState txState, RangeQuery query0) {
-        throw new UnsupportedOperationException();
     }
 }

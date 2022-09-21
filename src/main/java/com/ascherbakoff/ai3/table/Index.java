@@ -1,7 +1,6 @@
 package com.ascherbakoff.ai3.table;
 
 import com.ascherbakoff.ai3.table.MVStoreImpl.TxState;
-import java.util.Map.Entry;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 
