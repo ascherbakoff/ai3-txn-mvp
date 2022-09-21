@@ -8,6 +8,10 @@ public class Locker extends CompletableFuture<LockMode> {
 
     LockMode mode;
 
+    public LockMode getMode() {
+        return mode;
+    }
+
     /**
      * @param id Locker id.
      * @param mode Requested mode.

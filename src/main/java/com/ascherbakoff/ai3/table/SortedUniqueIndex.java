@@ -58,30 +58,30 @@ public class SortedUniqueIndex extends SortedNonUniqueIndex {
                     txState.addLock(lock1);
 
                     return lock1.acquire(txId, LockMode.X).thenAccept(ignored -> {
-                        if (index.insert(newVal, rowId)) {
-                            txState.addUndo(() -> index.remove(newVal, rowId));
-                        }
-
                         Cursor<Entry<Tuple, Cursor<VersionChain<Tuple>>>> cur = index.scan(newVal, true, newVal, true);
 
                         Entry<Tuple, Cursor<VersionChain<Tuple>>> next0 = cur.next();
 
-                        assert next0 != null && next0.getKey().equals(newVal);
+                        if (next0 != null) {
+                            Cursor<VersionChain<Tuple>> rowIds = next0.getValue();
 
-                        Cursor<VersionChain<Tuple>> rowIds = next0.getValue();
+                            VersionChain<Tuple> rowId0;
 
-                        VersionChain<Tuple> rowId0;
+                            while ((rowId0 = rowIds.next()) != null) {
+                                if (rowId0 == rowId) {
+                                    continue;
+                                }
 
-                        while ((rowId0 = rowIds.next()) != null) {
-                            if (rowId0 == rowId) {
-                                continue;
+                                // Read lock is not required here - we are protected from "dangerous" concurrent changes by index key lock.
+                                if (rowStore.get(rowId0, txId,
+                                        tuple -> (tuple == Tuple.TOMBSTONE ? Tuple.TOMBSTONE : tuple.select(col)).equals(newVal)) != null) {
+                                    throw new UniqueException("Failed to insert the row: duplicate index col=" + col + " key=" + newVal);
+                                }
                             }
+                        }
 
-                            // Read lock is not required here - we are protected from "dangerous" concurrent changes by index key lock.
-                            if (rowStore.get(rowId0, txId,
-                                    tuple -> (tuple == Tuple.TOMBSTONE ? Tuple.TOMBSTONE : tuple.select(col)).equals(newVal)) != null) {
-                                throw new UniqueException("Failed to insert the row: duplicate index col=" + col + " key=" + newVal);
-                            }
+                        if (index.insert(newVal, rowId)) {
+                            txState.addUndo(() -> index.remove(newVal, rowId));
                         }
 
                         if (lockMode != null && lockMode != LockMode.IX) { // Lock was upgraded.

@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 
 import java.util.EnumSet;
 import java.util.UUID;
@@ -574,15 +575,16 @@ public class LockTableTest {
         UUID id1 = UUID.randomUUID();
         UUID id2 = UUID.randomUUID();
 
-        Locker l1 = lock.acquire(id1, LockMode.X);
+        Locker l1 = lock.acquire(id1, LockMode.SIX);
         l1.join();
-        assertTrue(l1.id == id1 && l1.mode == LockMode.X);
+        assertTrue(l1.id == id1 && l1.mode == LockMode.SIX);
 
-        Locker l2 = lock.acquire(id2, LockMode.IX);
+        Locker l2 = lock.acquire(id2, LockMode.S);
         assertFalse(l2.isDone());
 
-        assertEquals(LockMode.X, lock.downgrade(id1, LockMode.IS));
-        assertTrue(l2.isDone()); // TODO FIXME !
+        assertEquals(LockMode.SIX, lock.downgrade(id1, LockMode.S));
+
+        fail(); // l2.join(); // TODO FIXME !
     }
 
     @Test

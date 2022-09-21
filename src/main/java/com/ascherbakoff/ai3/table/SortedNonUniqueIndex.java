@@ -60,22 +60,22 @@ public class SortedNonUniqueIndex implements Index {
 
                 Locker locker = nextLock.acquire(txId, LockMode.IX);
 
-                futs.add(locker.thenCompose(lockMode -> {
+                futs.add(locker.thenCompose(prevMode -> {
                     Lock curLock = lockTable.getOrAddEntry(newVal);
 
                     txState.addLock(curLock);
 
-                    LockMode mode = lockMode == LockMode.S || lockMode == LockMode.X || lockMode == LockMode.SIX ? LockMode.X : LockMode.IX;
+                    LockMode lockedInMode = locker.getMode();
+
+                    LockMode mode = lockedInMode == LockMode.S || lockedInMode == LockMode.X || lockedInMode == LockMode.SIX ? LockMode.X : LockMode.IX;
 
                     return curLock.acquire(txId, mode).thenAccept(ignored -> {
                         if (index.insert(newVal, rowId)) {
                             txState.addUndo(() -> index.remove(newVal, rowId));
                         }
 
-                        if (lockMode != null && lockMode != LockMode.IX) { // Lock was upgraded.
-                            LockMode mode0 = nextLock.downgrade(txId, lockMode);
-
-                            assert lockMode == mode0 : lockMode + "->" + mode0;
+                        if (prevMode != null && prevMode != LockMode.IX) { // Lock was upgraded.
+                            LockMode mode0 = nextLock.downgrade(txId, prevMode);
                         }
                         else {
                             nextLock.release(txId);
