@@ -4,6 +4,7 @@ import com.ascherbakoff.ai3.lock.Lock;
 import com.ascherbakoff.ai3.lock.LockMode;
 import com.ascherbakoff.ai3.lock.LockTable;
 import com.ascherbakoff.ai3.table.MVStoreImpl.TxState;
+import java.util.AbstractMap.SimpleEntry;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map.Entry;
@@ -93,7 +94,7 @@ public class HashNonUniqueIndex implements Index {
     }
 
     @Override
-    public AsyncCursor<Entry<Tuple, Cursor<VersionChain<Tuple>>>> range(UUID txId, TxState txState, RangeQuery query0) {
+    public AsyncCursor<VersionChain<Tuple>> range(UUID txId, TxState txState, RangeQuery query0) {
         throw new UnsupportedOperationException();
     }
 }

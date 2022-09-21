@@ -14,6 +14,7 @@ import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Predicate;
+import org.jetbrains.annotations.Nullable;
 
 /**
  * TODO reduce copypaste, compact tx state
@@ -81,7 +82,7 @@ public class MVStoreImpl implements MVStore {
     }
 
     @Override
-    public CompletableFuture<Tuple> get(VersionChain<Tuple> rowId, UUID txId, Predicate<Tuple> filter) {
+    public CompletableFuture<Tuple> get(VersionChain<Tuple> rowId, UUID txId, @Nullable Predicate<Tuple> filter) {
         Lock lock = lockTable.getOrAddEntry(rowId);
 
         TxState txState = localState(txId);
@@ -96,8 +97,6 @@ public class MVStoreImpl implements MVStore {
         TxState txState = localState(txId);
         // TODO FIXME remove instanceof
         if (query instanceof ScanQuery) {
-            // TODO FIXME table lock
-
             Cursor<VersionChain<Tuple>> cur = rowStore.scan(txId);
 
             return new AsyncCursor<VersionChain<Tuple>>() {
@@ -118,6 +117,16 @@ public class MVStoreImpl implements MVStore {
             }
 
             return idx.eq(txId, txState, query0);
+        } else if (query instanceof RangeQuery) {
+            RangeQuery query0 = (RangeQuery) query;
+
+            Index idx = indexes.get(query0.col);
+
+            if (idx == null) {
+                throw new IllegalArgumentException("Hash index not found for col=" + query0.col);
+            }
+
+            return idx.range(txId, txState, query0);
         }
 
         return null;

@@ -11,4 +11,6 @@ interface SortedIndexStore<T> {
     boolean remove(Tuple key, T rowId);
 
     @Nullable Tuple nextKey(Tuple key);
+
+    boolean contains(Tuple key);
 }

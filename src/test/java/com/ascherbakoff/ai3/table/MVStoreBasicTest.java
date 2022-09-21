@@ -11,7 +11,6 @@ import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
 import java.util.function.Function;
-import java.util.stream.Collectors;
 import org.jetbrains.annotations.Nullable;
 import org.junit.jupiter.api.Test;
 
@@ -38,9 +37,9 @@ public abstract class MVStoreBasicTest {
         List<VersionChain<Tuple>> rows = store.query(new ScanQuery(), txId).loadAll(new ArrayList<>(3)).join();
         assertEquals(3, rows.size());
 
-        assertEquals(t0, getByIndexUnique(txId, 0, Tuple.create(0)));
-        assertEquals(t1, getByIndexUnique(txId, 0, Tuple.create(1)));
-        assertEquals(t2, getByIndexUnique(txId, 0, Tuple.create(2)));
+        assertEquals(t0, getSingle(txId, 0, Tuple.create(0)));
+        assertEquals(t1, getSingle(txId, 0, Tuple.create(1)));
+        assertEquals(t2, getSingle(txId, 0, Tuple.create(2)));
     }
 
     @Test
@@ -56,14 +55,14 @@ public abstract class MVStoreBasicTest {
 
         rowId.printVersionChain();
 
-        assertEquals(Tuple.create(1, "val1"), getByIndexUnique(txId2, 0, Tuple.create(1)));
+        assertEquals(Tuple.create(1, "val1"), getSingle(txId2, 0, Tuple.create(1)));
 
         store.commit(txId2, Timestamp.now());
         store.update(rowId, Tuple.TOMBSTONE, txId3).join();
         store.commit(txId3, Timestamp.now());
 
-        assertNull(getByIndexUnique(txId4, 0, Tuple.create(0)));
-        assertNull(getByIndexUnique(txId4, 0, Tuple.create(1)));
+        assertNull(getSingle(txId4, 0, Tuple.create(0)));
+        assertNull(getSingle(txId4, 0, Tuple.create(1)));
     }
 
     @Test
@@ -77,9 +76,9 @@ public abstract class MVStoreBasicTest {
         store.abort(txId);
         assertNull(store.txnLocalMap.get(txId));
 
-        assertNull(getByIndexUnique(txId, 0, Tuple.create(0)));
-        assertNull(getByIndexUnique(txId, 0, Tuple.create(1)));
-        assertNull(getByIndexUnique(txId, 0, Tuple.create(2)));
+        assertNull(getSingle(txId, 0, Tuple.create(0)));
+        assertNull(getSingle(txId, 0, Tuple.create(1)));
+        assertNull(getSingle(txId, 0, Tuple.create(2)));
     }
 
     @Test
@@ -94,9 +93,9 @@ public abstract class MVStoreBasicTest {
         store.update(rowId2, Tuple.TOMBSTONE, txId).join();
         store.update(rowId3, Tuple.TOMBSTONE, txId).join();
 
-        assertNull(getByIndexUnique(txId, 0, Tuple.create(0)));
-        assertNull(getByIndexUnique(txId, 0, Tuple.create(1)));
-        assertNull(getByIndexUnique(txId, 0, Tuple.create(2)));
+        assertNull(getSingle(txId, 0, Tuple.create(0)));
+        assertNull(getSingle(txId, 0, Tuple.create(1)));
+        assertNull(getSingle(txId, 0, Tuple.create(2)));
     }
 
     @Test
@@ -111,8 +110,8 @@ public abstract class MVStoreBasicTest {
         store.update(rowId, Tuple.create(1, "val1"), txId2).join();
         store.abort(txId2);
 
-        assertEquals(Tuple.create(0, "val0"), getByIndexUnique(txId3, 0, Tuple.create(0)));
-        assertNull(getByIndexUnique(txId3, 0, Tuple.create(1)));
+        assertEquals(Tuple.create(0, "val0"), getSingle(txId3, 0, Tuple.create(0)));
+        assertNull(getSingle(txId3, 0, Tuple.create(1)));
     }
 
     @Test
@@ -128,8 +127,8 @@ public abstract class MVStoreBasicTest {
         store.update(rowId, Tuple.TOMBSTONE, txId2).join();
         store.commit(txId2, Timestamp.now());
 
-        assertNull(getByIndexUnique(txId3, 0, Tuple.create(0)));
-        assertNull(getByIndexUnique(txId3, 0, Tuple.create(1)));
+        assertNull(getSingle(txId3, 0, Tuple.create(0)));
+        assertNull(getSingle(txId3, 0, Tuple.create(1)));
     }
 
     @Test
@@ -148,8 +147,8 @@ public abstract class MVStoreBasicTest {
 
         assertEquals(1, store.query(new EqQuery(0, Tuple.create(0)), txId3).loadAll(new ArrayList<>()).join().size());
 
-        assertNull(getByIndexUnique(txId3, 0, Tuple.create(0)));
-        assertEquals(Tuple.create(1, "val1"), getByIndexUnique(txId3, 0, Tuple.create(1)));
+        assertNull(getSingle(txId3, 0, Tuple.create(0)));
+        assertEquals(Tuple.create(1, "val1"), getSingle(txId3, 0, Tuple.create(1)));
     }
 
     @Test
@@ -161,13 +160,13 @@ public abstract class MVStoreBasicTest {
         Tuple t2 = Tuple.create(1, "val1");
         store.insert(t2, txId1).join();
 
-        assertEquals(t1, getByIndexUnique(txId1, 0, Tuple.create(0)));
-        assertEquals(t2, getByIndexUnique(txId1, 0, Tuple.create(1)));
+        assertEquals(t1, getSingle(txId1, 0, Tuple.create(0)));
+        assertEquals(t2, getSingle(txId1, 0, Tuple.create(1)));
 
         store.commit(txId1, Timestamp.now());
 
-        assertEquals(t1, getByIndexUnique(txId1, 0, Tuple.create(0)));
-        assertEquals(t2, getByIndexUnique(txId1, 0, Tuple.create(1)));
+        assertEquals(t1, getSingle(txId1, 0, Tuple.create(0)));
+        assertEquals(t2, getSingle(txId1, 0, Tuple.create(1)));
     }
 
     @Test
@@ -213,16 +212,11 @@ public abstract class MVStoreBasicTest {
      * @return The tuple.
      */
     @Nullable
-    Tuple getByIndexUnique(UUID txId, int col, Tuple searchKey) {
-        AsyncCursor<VersionChain<Tuple>> query = store.query(new EqQuery(col, searchKey), txId);
-        List<VersionChain<Tuple>> join = query.loadAll(new ArrayList<>()).join();
-        List<Tuple> rows = join.stream().map(row ->
-                store.get(row, txId, tup -> tup == Tuple.TOMBSTONE ? false : tup.select(0).equals(searchKey)).join()).filter(t -> t != null).collect(Collectors.toList());
-        assertTrue(rows.size() <= 1);
-        return rows.isEmpty() ? null : rows.get(0);
+    Tuple getSingle(UUID txId, int col, Tuple searchKey) {
+        return getSingleAsync(txId, col, searchKey).join();
     }
 
-    CompletableFuture<Tuple> getByIndexUniqueAsync(UUID txId, int col, Tuple searchKey) {
+    CompletableFuture<Tuple> getSingleAsync(UUID txId, int col, Tuple searchKey) {
         AsyncCursor<VersionChain<Tuple>> query = store.query(new EqQuery(col, searchKey), txId);
         return query.loadAll(new ArrayList<>()).thenCompose(new Function<List<VersionChain<Tuple>>, CompletionStage<Tuple>>() {
             @Override
@@ -251,7 +245,7 @@ public abstract class MVStoreBasicTest {
     };
 
     @Nullable
-    Tuple getByIndexUnique(Timestamp ts, int col, Tuple searchKey) {
+    Tuple getSingle(Timestamp ts, int col, Tuple searchKey) {
         Cursor<Tuple> query = store.query(new EqQuery(col, searchKey), ts);
         List<Tuple> rows = query.getAll();
         assertTrue(rows.size() <= 1);

@@ -77,6 +77,6 @@ public abstract class MVStoreNonUniqueIndexBasicTest extends MVStoreBasicTest {
         assertNull(store.txnLocalMap.get(txId));
         assertNull(store.txnLocalMap.get(txId2));
 
-        assertNull(getByIndexUnique(txId3, 0, Tuple.create(0)));
+        assertNull(getSingle(txId3, 0, Tuple.create(0)));
     }
 }

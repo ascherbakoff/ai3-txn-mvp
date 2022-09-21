@@ -85,11 +85,11 @@ public abstract class MVStoreWithUniqueIndexBasicTest extends MVStoreBasicTest {
         store.update(rowId, Tuple.create(1, "val1"), txId2).join();
         store.update(rowId, Tuple.create(0, "val2"), txId2).join();
 
-        assertEquals(Tuple.create(0, "val2"), getByIndexUnique(txId2, 0, Tuple.create(0)));
+        assertEquals(Tuple.create(0, "val2"), getSingle(txId2, 0, Tuple.create(0)));
 
         store.commit(txId2, Timestamp.now());
 
-        assertEquals(Tuple.create(0, "val2"), getByIndexUnique(txId2, 0, Tuple.create(0)));
+        assertEquals(Tuple.create(0, "val2"), getSingle(txId2, 0, Tuple.create(0)));
     }
 
     @Test
@@ -124,7 +124,7 @@ public abstract class MVStoreWithUniqueIndexBasicTest extends MVStoreBasicTest {
 
         store.insert(Tuple.create(0, "val0"), txId).join();
 
-        CompletableFuture<Tuple> fut = getByIndexUniqueAsync(txId2, 0, Tuple.create(0));
+        CompletableFuture<Tuple> fut = getSingleAsync(txId2, 0, Tuple.create(0));
 
         store.commit(txId, Timestamp.now());
 
@@ -136,18 +136,18 @@ public abstract class MVStoreWithUniqueIndexBasicTest extends MVStoreBasicTest {
         UUID txId = new UUID(0, 0);
         UUID txId2 = new UUID(0, 1);
 
-        assertNull(getByIndexUnique(txId2, 0, Tuple.create(0)));
+        assertNull(getSingle(txId2, 0, Tuple.create(0)));
 
         CompletableFuture<VersionChain<Tuple>> fut = store.insert(Tuple.create(0, "val0"), txId);
         assertFalse(fut.isDone());
 
-        assertNull(getByIndexUnique(txId2, 0, Tuple.create(0)));
+        assertNull(getSingle(txId2, 0, Tuple.create(0)));
 
         store.commit(txId2, Timestamp.now());
 
         fut.join();
 
-        assertEquals(Tuple.create(0, "val0"), getByIndexUnique(txId, 0, Tuple.create(0)));
+        assertEquals(Tuple.create(0, "val0"), getSingle(txId, 0, Tuple.create(0)));
     }
 
     @Test
@@ -157,7 +157,7 @@ public abstract class MVStoreWithUniqueIndexBasicTest extends MVStoreBasicTest {
 
         store.insert(Tuple.create(0, "val0"), txId).join();
 
-        CompletableFuture<Tuple> fut = getByIndexUniqueAsync(txId2, 0, Tuple.create(0));
+        CompletableFuture<Tuple> fut = getSingleAsync(txId2, 0, Tuple.create(0));
 
         store.abort(txId);
 
@@ -177,14 +177,14 @@ public abstract class MVStoreWithUniqueIndexBasicTest extends MVStoreBasicTest {
 
         CompletableFuture<Tuple> fut = store.remove(rowId, txId3);
         assertFalse(fut.isDone());
-        CompletableFuture<Tuple> fut2 = getByIndexUniqueAsync(txId3, 0, Tuple.create(0));
+        CompletableFuture<Tuple> fut2 = getSingleAsync(txId3, 0, Tuple.create(0));
         assertFalse(fut2.isDone());
 
         store.commit(txId2, Timestamp.now());
 
         assertEquals(Tuple.create(0, "val1"), fut.join());
         fut2.join(); // Both futures are concurrent
-        assertNull(getByIndexUnique(txId3, 0, Tuple.create(0)));
+        assertNull(getSingle(txId3, 0, Tuple.create(0)));
     }
 
     @Test
@@ -200,14 +200,14 @@ public abstract class MVStoreWithUniqueIndexBasicTest extends MVStoreBasicTest {
 
         CompletableFuture<Tuple> fut = store.remove(rowId, txId3);
         assertFalse(fut.isDone());
-        CompletableFuture<Tuple> fut2 = getByIndexUniqueAsync(txId3, 0, Tuple.create(0));
+        CompletableFuture<Tuple> fut2 = getSingleAsync(txId3, 0, Tuple.create(0));
         assertFalse(fut2.isDone());
 
         store.abort(txId2);
 
         assertEquals(Tuple.create(0, "val0"), fut.join());
         fut2.join(); // Both futures are concurrent
-        assertNull(getByIndexUnique(txId3, 0, Tuple.create(0)));
+        assertNull(getSingle(txId3, 0, Tuple.create(0)));
     }
 
     @Test
@@ -223,14 +223,14 @@ public abstract class MVStoreWithUniqueIndexBasicTest extends MVStoreBasicTest {
 
         CompletableFuture<VersionChain<Tuple>> fut = store.insert(Tuple.create(0, "val1"), txId3);
         assertFalse(fut.isDone());
-        CompletableFuture<Tuple> fut2 = getByIndexUniqueAsync(txId3, 0, Tuple.create(0));
+        CompletableFuture<Tuple> fut2 = getSingleAsync(txId3, 0, Tuple.create(0));
         assertFalse(fut2.isDone());
 
         store.commit(txId2, Timestamp.now());
 
         fut.join();
         fut2.join();
-        assertEquals(Tuple.create(0, "val1"), getByIndexUnique(txId3, 0, Tuple.create(0)));
+        assertEquals(Tuple.create(0, "val1"), getSingle(txId3, 0, Tuple.create(0)));
     }
 
     @Test
@@ -244,7 +244,7 @@ public abstract class MVStoreWithUniqueIndexBasicTest extends MVStoreBasicTest {
 
         store.remove(rowId, txId2).join();
 
-        CompletableFuture<Tuple> fut2 = getByIndexUniqueAsync(txId3, 0, Tuple.create(0));
+        CompletableFuture<Tuple> fut2 = getSingleAsync(txId3, 0, Tuple.create(0));
         assertFalse(fut2.isDone());
 
         CompletableFuture<VersionChain<Tuple>> fut = store.insert(Tuple.create(0, "val1"), txId3);

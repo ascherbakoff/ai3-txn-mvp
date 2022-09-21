@@ -83,4 +83,9 @@ public class SortedIndexStoreImpl<T> implements SortedIndexStore<T> {
         Entry<Tuple, Set<T>> nextE = data.tailMap(key, false).firstEntry();
         return nextE == null ? null : nextE.getKey();
     }
+
+    @Override
+    public boolean contains(Tuple key) {
+        return data.containsKey(key);
+    }
 }

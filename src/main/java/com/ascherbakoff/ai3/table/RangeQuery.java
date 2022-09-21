@@ -14,4 +14,8 @@ public class RangeQuery implements Query {
         this.upperKey = upperKey;
         this.upperInclusive = upperInclusive;
     }
+
+    public RangeQuery(EqQuery query0) {
+        this(query0.col, query0.queryKey, true, query0.queryKey, true);
+    }
 }
