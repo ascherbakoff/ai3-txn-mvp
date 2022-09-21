@@ -76,8 +76,7 @@ public class SortedNonUniqueIndex implements Index {
 
                         if (prevMode != null && prevMode != LockMode.IX) { // Lock was upgraded.
                             LockMode mode0 = nextLock.downgrade(txId, prevMode);
-                        }
-                        else {
+                        } else {
                             nextLock.release(txId);
                             txState.locks.remove(nextLock);
                         }

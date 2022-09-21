@@ -46,18 +46,18 @@ public class SortedUniqueIndex extends SortedNonUniqueIndex {
                     nextKey = Tuple.INF;
                 }
 
-                Lock lock0 = lockTable.getOrAddEntry(nextKey);
+                Lock nextLock = lockTable.getOrAddEntry(nextKey);
 
-                txState.addLock(lock0);
+                txState.addLock(nextLock);
 
-                Locker locker = lock0.acquire(txId, LockMode.IX);
+                Locker locker = nextLock.acquire(txId, LockMode.IX);
 
-                futs.add(locker.thenCompose(lockMode -> {
-                    Lock lock1 = lockTable.getOrAddEntry(newVal);
+                futs.add(locker.thenCompose(prevMode -> {
+                    Lock curLock = lockTable.getOrAddEntry(newVal);
 
-                    txState.addLock(lock1);
+                    txState.addLock(curLock);
 
-                    return lock1.acquire(txId, LockMode.X).thenAccept(ignored -> {
+                    return curLock.acquire(txId, LockMode.X).thenAccept(ignored -> {
                         Cursor<Entry<Tuple, Cursor<VersionChain<Tuple>>>> cur = index.scan(newVal, true, newVal, true);
 
                         Entry<Tuple, Cursor<VersionChain<Tuple>>> next0 = cur.next();
@@ -84,13 +84,11 @@ public class SortedUniqueIndex extends SortedNonUniqueIndex {
                             txState.addUndo(() -> index.remove(newVal, rowId));
                         }
 
-                        if (lockMode != null && lockMode != LockMode.IX) { // Lock was upgraded.
-                            LockMode mode = lock0.downgrade(txId, lockMode);
-
-                            assert lockMode == mode : lockMode + "->" + mode;
+                        if (prevMode != null && prevMode != LockMode.IX) { // Lock was upgraded.
+                            LockMode mode = nextLock.downgrade(txId, prevMode);
                         } else {
-                            lock0.release(txId);
-                            txState.locks.remove(lock0);
+                            nextLock.release(txId);
+                            txState.locks.remove(nextLock);
                         }
                     });
                 }));
