@@ -2,6 +2,7 @@ package com.ascherbakoff.ai3.table;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import com.ascherbakoff.ai3.lock.DeadlockPrevention;
 import com.ascherbakoff.ai3.lock.LockTable;
@@ -9,6 +10,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.CompletionException;
 import org.junit.jupiter.api.Test;
 
 public class MVStoreWithSortedUniqueIndexTest extends MVStoreWithUniqueIndexBasicTest {
@@ -185,6 +187,9 @@ public class MVStoreWithSortedUniqueIndexTest extends MVStoreWithUniqueIndexBasi
                 .loadAll(new ArrayList<>()).join();
 
         assertEquals(1, rows.size());
+
+        var err = assertThrows(CompletionException.class, () -> store.insert(Tuple.create(1, "val2"), txId).join());
+        assertEquals(UniqueException.class, err.getCause().getClass());
 
         store.insert(Tuple.create(2, "val2"), txId).join();
 
