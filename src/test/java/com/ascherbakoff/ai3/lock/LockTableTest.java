@@ -4,7 +4,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.junit.jupiter.api.Assertions.fail;
 
 import java.util.EnumSet;
 import java.util.UUID;
@@ -613,6 +612,48 @@ public class LockTableTest {
         assertEquals(LockMode.SIX, lock.downgrade(id2, LockMode.S));
 
         l3.join();
+        l4.join();
+    }
+
+    @Test
+    public void testDowngradeToWeaker3() {
+        Lock lock = lockTable.getOrAddEntry(0);
+
+        UUID id1 = new UUID(0, 0);
+        UUID id2 = new UUID(0, 1);
+        UUID id3 = new UUID(0, 2);
+        UUID id4 = new UUID(0, 3);
+
+        Locker l1 = lock.acquire(id1, LockMode.IS);
+        l1.join();
+        assertTrue(l1.id == id1 && l1.mode == LockMode.IS);
+
+        Locker l2 = lock.acquire(id2, LockMode.SIX);
+        l2.join();
+        assertTrue(l2.id == id2 && l2.mode == LockMode.SIX);
+
+        Locker l3 = lock.acquire(id3, LockMode.S);
+        assertFalse(l3.isDone());
+
+        Locker l4 = lock.acquire(id4, LockMode.X);
+        assertFalse(l4.isDone());
+
+        assertEquals(LockMode.SIX, lock.downgrade(id2, LockMode.S));
+
+        l3.join();
+
+        assertFalse(l4.isDone());
+
+        lock.release(l3);
+
+        assertFalse(l4.isDone());
+
+        lock.release(l1);
+
+        assertFalse(l4.isDone());
+
+        lock.release(l2);
+
         l4.join();
     }
 
