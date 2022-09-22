@@ -18,7 +18,9 @@ public class SortedIndexStoreImpl<T> implements SortedIndexStore<T> {
     public Cursor<Entry<Tuple, Cursor<T>>> scan(@Nullable Tuple lower, boolean lowerInclusive, @Nullable Tuple upper, boolean upperInclusve) {
         NavigableMap<Tuple, Set<T>> subMap;
 
-        if (lower == null) {
+        if (lower == null && upper == null) {
+            subMap = data;
+        } else if (lower == null) {
             subMap = data.headMap(upper, upperInclusve);
         } else if (upper == null) {
             subMap = data.tailMap(lower, lowerInclusive);

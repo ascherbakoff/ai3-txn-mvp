@@ -1,15 +1,19 @@
 package com.ascherbakoff.ai3.table;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.ascherbakoff.ai3.clock.Timestamp;
 import com.ascherbakoff.ai3.lock.DeadlockPrevention;
 import com.ascherbakoff.ai3.lock.LockTable;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import org.junit.jupiter.api.Test;
 
@@ -32,9 +36,9 @@ public class MVStoreWithSortedUniqueIndexTest extends MVStoreWithUniqueIndexBasi
     public void testRangeQuerySingle() {
         UUID txId = new UUID(0, 0);
 
-        VersionChain<Tuple> rowId1 = store.insert(Tuple.create(0, "val0"), txId).join();
-        VersionChain<Tuple> rowId2 = store.insert(Tuple.create(1, "val1"), txId).join();
-        VersionChain<Tuple> rowId3 = store.insert(Tuple.create(2, "val2"), txId).join();
+        store.insert(Tuple.create(0, "val0"), txId).join();
+        store.insert(Tuple.create(1, "val1"), txId).join();
+        store.insert(Tuple.create(2, "val2"), txId).join();
 
         assertEquals(Tuple.create(0, "val0"), getSingle(txId, 0, Tuple.create(0)));
         assertEquals(Tuple.create(1, "val1"), getSingle(txId, 0, Tuple.create(1)));
@@ -163,23 +167,59 @@ public class MVStoreWithSortedUniqueIndexTest extends MVStoreWithUniqueIndexBasi
     }
 
     @Test
-    public void testRangeQuery_2TX() {
+    public void testInsertGet_3TX() {
         UUID txId = new UUID(0, 0);
         UUID txId2 = new UUID(0, 1);
+        UUID txId3 = new UUID(0, 2);
 
-        VersionChain<Tuple> rowId1 = store.insert(Tuple.create(0, "val0"), txId).join();
-        VersionChain<Tuple> rowId2 = store.insert(Tuple.create(1, "val1"), txId).join();
-        VersionChain<Tuple> rowId3 = store.insert(Tuple.create(2, "val2"), txId).join();
+        store.insert(Tuple.create(0, "val0"), txId).join();
+        store.insert(Tuple.create(1, "val1"), txId).join();
+        store.insert(Tuple.create(2, "val2"), txId).join();
 
-        VersionChain<Tuple> rowId4 = store.insert(Tuple.create(3, "val3"), txId).join();
+        store.insert(Tuple.create(3, "val3"), txId2).join();
 
-        //store.query(new RangeQuery(), txId);
+        CompletableFuture<List<VersionChain<Tuple>>> fut = store
+                .query(new RangeQuery(0, null, true, null, false), txId3).loadAll(new ArrayList<>());
+
+        assertFalse(fut.isDone());
+        store.commit(txId, Timestamp.now());
+        assertFalse(fut.isDone());
+        store.commit(txId2, Timestamp.now());
+
+        List<VersionChain<Tuple>> rows = fut.join();
+        assertEquals(4, rows.size());
+    }
+
+    @Test
+    public void testInsertGetAbort_3TX() {
+        UUID txId = new UUID(0, 0);
+        UUID txId2 = new UUID(0, 1);
+        UUID txId3 = new UUID(0, 2);
+
+        // Insert tx1
+        store.insert(Tuple.create(0, "val0"), txId).join();
+        store.insert(Tuple.create(1, "val1"), txId).join();
+        store.insert(Tuple.create(2, "val2"), txId).join();
+
+        // Insert tx2
+        store.insert(Tuple.create(3, "val3"), txId2).join();
+
+        // Scan tx3
+        CompletableFuture<List<VersionChain<Tuple>>> fut = store
+                .query(new RangeQuery(0, null, true, null, false), txId3).loadAll(new ArrayList<>());
+
+        assertFalse(fut.isDone());
+        store.abort(txId);
+        assertFalse(fut.isDone());
+        store.abort(txId2);
+
+        List<VersionChain<Tuple>> rows = fut.join();
+        assertTrue(rows.isEmpty());
     }
 
     @Test
     public void testInsertGetEmpty() {
         UUID txId = new UUID(0, 0);
-        UUID txI2 = new UUID(0, 1);
 
         store.insert(Tuple.create(1, "val1"), txId).join();
 
@@ -193,10 +233,25 @@ public class MVStoreWithSortedUniqueIndexTest extends MVStoreWithUniqueIndexBasi
 
         store.insert(Tuple.create(2, "val2"), txId).join();
 
-        rows = store.query(new RangeQuery(0, Tuple.create(0), true, null, true), txId)
-                .loadAll(new ArrayList<>()).join();
+        rows = store.query(new RangeQuery(0, Tuple.create(0), true, null, true), txId).loadAll(new ArrayList<>()).join();
 
         assertEquals(2, rows.size());
+    }
+
+    @Test
+    public void testInsertGetUpper_2TX() {
+        UUID txId = new UUID(0, 0);
+        UUID txI2 = new UUID(0, 2);
+        UUID txI3 = new UUID(0, 3);
+
+        store.insert(Tuple.create(10, "val1"), txId).join();
+        store.commit(txId, Timestamp.now());
+
+        store.insert(Tuple.create(9, "val2"), txI2).join();
+
+        assertEquals(Tuple.create(10, "val1"), getSingle(txI3, 0, Tuple.create(10)));
+        CompletableFuture<Tuple> fut = getSingleAsync(txI3, 0, Tuple.create(9));
+        assertFalse(fut.isDone());
     }
 
     private void validateRows(List<VersionChain<Tuple>> rows, int expCnt, int idx, UUID txId) {
