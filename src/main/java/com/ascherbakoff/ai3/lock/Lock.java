@@ -102,7 +102,29 @@ public class Lock {
 
         LockMode tmp = locker.mode;
 
-        locker.mode = mode; // TBD queued lockers can request new lock for weaker mode
+        locker.mode = mode;
+
+        if (!waiters.isEmpty()) {
+            while (!waiters.isEmpty()) {
+                Locker next = waiters.get(0);
+
+                if (owners.size() == 1 && next.id.equals(locker.id)) {
+                    LockMode prev = locker.mode;
+                    LockMode supremum = LockTable.supremum(prev, next.mode);
+                    next.mode = supremum;
+                    locker.mode = supremum;
+                    next.completeAsync(() -> prev);
+
+                    waiters.remove(0);
+                } else if (compatible(next)) {
+                    next.completeAsync(() -> null);
+                    waiters.remove(0);
+                    owners.put(next.id, next);
+                } else {
+                    break;
+                }
+            }
+        }
 
         return tmp;
     }

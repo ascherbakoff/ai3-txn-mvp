@@ -584,7 +584,36 @@ public class LockTableTest {
 
         assertEquals(LockMode.SIX, lock.downgrade(id1, LockMode.S));
 
-        fail(); // l2.join(); // TODO FIXME !
+        l2.join();
+    }
+
+    @Test
+    public void testDowngradeToWeaker2() {
+        Lock lock = lockTable.getOrAddEntry(0);
+
+        UUID id1 = UUID.randomUUID();
+        UUID id2 = UUID.randomUUID();
+        UUID id3 = UUID.randomUUID();
+        UUID id4 = UUID.randomUUID();
+
+        Locker l1 = lock.acquire(id1, LockMode.IS);
+        l1.join();
+        assertTrue(l1.id == id1 && l1.mode == LockMode.IS);
+
+        Locker l2 = lock.acquire(id2, LockMode.SIX);
+        l2.join();
+        assertTrue(l2.id == id2 && l2.mode == LockMode.SIX);
+
+        Locker l3 = lock.acquire(id3, LockMode.S);
+        assertFalse(l3.isDone());
+
+        Locker l4 = lock.acquire(id4, LockMode.S);
+        assertFalse(l4.isDone());
+
+        assertEquals(LockMode.SIX, lock.downgrade(id2, LockMode.S));
+
+        l3.join();
+        l4.join();
     }
 
     @Test
