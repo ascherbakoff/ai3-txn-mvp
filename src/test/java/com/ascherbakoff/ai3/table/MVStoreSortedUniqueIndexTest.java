@@ -17,7 +17,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import org.junit.jupiter.api.Test;
 
-public class MVStoreSortedUniqueIndexTest extends MVStoreUniqueIndexBasicTest {
+public class MVStoreSortedUniqueIndexTest extends MVStoreBasicUniqueIndexTest {
     public MVStoreSortedUniqueIndexTest() {
         {
             VersionChainRowStore<Tuple> rowStore = new VersionChainRowStore<>();

@@ -4,8 +4,8 @@ import com.ascherbakoff.ai3.lock.DeadlockPrevention;
 import com.ascherbakoff.ai3.lock.LockTable;
 import java.util.Map;
 
-public class MVStoreWithHashNonUniqueIndexTest extends MVStoreNonUniqueIndexBasicTest {
-    public MVStoreWithHashNonUniqueIndexTest() {
+public class MVStoreHashNonUniqueIndexTest extends MVStoreBasicNonUniqueIndexTest {
+    public MVStoreHashNonUniqueIndexTest() {
         {
             VersionChainRowStore<Tuple> rowStore = new VersionChainRowStore<>();
             store = new MVStoreImpl(

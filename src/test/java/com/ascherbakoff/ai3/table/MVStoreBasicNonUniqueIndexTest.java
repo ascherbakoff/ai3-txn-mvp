@@ -9,8 +9,8 @@ import java.util.Map;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
-public abstract class MVStoreNonUniqueIndexBasicTest extends MVStoreBasicTest {
-    public MVStoreNonUniqueIndexBasicTest() {
+public abstract class MVStoreBasicNonUniqueIndexTest extends MVStoreBasicTest {
+    public MVStoreBasicNonUniqueIndexTest() {
         {
             VersionChainRowStore<Tuple> rowStore = new VersionChainRowStore<>();
             store = new MVStoreImpl(

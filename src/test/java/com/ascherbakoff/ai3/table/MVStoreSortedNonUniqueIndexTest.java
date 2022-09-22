@@ -11,8 +11,8 @@ import java.util.Map;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
-public class MVStoreWithSortedNonUniqueIndexTest extends MVStoreNonUniqueIndexBasicTest {
-    public MVStoreWithSortedNonUniqueIndexTest() {
+public class MVStoreSortedNonUniqueIndexTest extends MVStoreBasicNonUniqueIndexTest {
+    public MVStoreSortedNonUniqueIndexTest() {
         {
             VersionChainRowStore<Tuple> rowStore = new VersionChainRowStore<>();
             store = new MVStoreImpl(
