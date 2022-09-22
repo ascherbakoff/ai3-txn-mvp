@@ -1,6 +1,7 @@
 package com.ascherbakoff.ai3.table;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -52,8 +53,6 @@ public abstract class MVStoreBasicTest {
         VersionChain<Tuple> rowId = store.insert(Tuple.create(0, "val0"), txId).join();
         store.commit(txId, Timestamp.now());
         store.update(rowId, Tuple.create(1, "val1"), txId2).join();
-
-        rowId.printVersionChain();
 
         assertEquals(Tuple.create(1, "val1"), getSingle(txId2, 0, Tuple.create(1)));
 
@@ -201,6 +200,22 @@ public abstract class MVStoreBasicTest {
 
         List<VersionChain<Tuple>> rows2 = store.query(new ScanQuery(), txId2).loadAll(new ArrayList<>()).join();
         assertEquals(2, rows2.size());
+    }
+
+    @Test
+    public void testInsertGetUpper_2TX() {
+        UUID txId = new UUID(0, 0);
+        UUID txI2 = new UUID(0, 2);
+        UUID txI3 = new UUID(0, 3);
+
+        store.insert(Tuple.create(10, "val1"), txId).join();
+        store.commit(txId, Timestamp.now());
+
+        store.insert(Tuple.create(9, "val2"), txI2).join();
+
+        assertEquals(Tuple.create(10, "val1"), getSingle(txI3, 0, Tuple.create(10)));
+        CompletableFuture<Tuple> fut = getSingleAsync(txI3, 0, Tuple.create(9));
+        assertFalse(fut.isDone());
     }
 
     /**

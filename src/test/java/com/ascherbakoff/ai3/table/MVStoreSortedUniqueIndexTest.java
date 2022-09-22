@@ -238,22 +238,6 @@ public class MVStoreSortedUniqueIndexTest extends MVStoreBasicUniqueIndexTest {
         assertEquals(2, rows.size());
     }
 
-    @Test
-    public void testInsertGetUpper_2TX() {
-        UUID txId = new UUID(0, 0);
-        UUID txI2 = new UUID(0, 2);
-        UUID txI3 = new UUID(0, 3);
-
-        store.insert(Tuple.create(10, "val1"), txId).join();
-        store.commit(txId, Timestamp.now());
-
-        store.insert(Tuple.create(9, "val2"), txI2).join();
-
-        assertEquals(Tuple.create(10, "val1"), getSingle(txI3, 0, Tuple.create(10)));
-        CompletableFuture<Tuple> fut = getSingleAsync(txI3, 0, Tuple.create(9));
-        assertFalse(fut.isDone());
-    }
-
     private void validateRows(List<VersionChain<Tuple>> rows, int expCnt, int idx, UUID txId) {
         assertEquals(expCnt, rows.size());
 
