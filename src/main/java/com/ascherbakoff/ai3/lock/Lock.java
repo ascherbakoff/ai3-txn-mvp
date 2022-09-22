@@ -15,7 +15,7 @@ public class Lock {
     List<Locker> waiters = new ArrayList<>();
 
     /** Max version for deadlock prevention. */
-    UUID maxVersion;
+    UUID minVersion;
 
     private boolean fair;
 
@@ -59,8 +59,8 @@ public class Lock {
                 owner.mode = locker.mode; // Overwrite locked mode.
                 return locker0;
             } else {
-                if (prevention.forceOrder && maxVersion != null && maxVersion.compareTo(lockerId) < 0) {
-                    throw new LockException("Invalid lock order " + maxVersion + " -> " + lockerId);
+                if (prevention.forceOrder && minVersion != null && minVersion.compareTo(lockerId) < 0) {
+                    throw new LockException("Invalid lock order " + minVersion + " -> " + lockerId);
                 }
 
                 waiters.add(locker);
@@ -69,8 +69,8 @@ public class Lock {
         }
 
         if (!compatible(locker)) {
-            if (prevention.forceOrder && maxVersion != null && maxVersion.compareTo(lockerId) < 0) {
-                throw new LockException("Invalid lock order " + maxVersion + " -> " + lockerId);
+            if (prevention.forceOrder && minVersion != null && minVersion.compareTo(lockerId) < 0) {
+                throw new LockException("Invalid lock order " + minVersion + " -> " + lockerId);
             }
 
             waiters.add(locker);
@@ -82,8 +82,8 @@ public class Lock {
         locker.complete(null);
         owners.put(lockerId, locker);
 
-        if (maxVersion == null || lockerId.compareTo(maxVersion) < 0) {
-            maxVersion = lockerId;
+        if (minVersion == null || lockerId.compareTo(minVersion) < 0) {
+            minVersion = lockerId;
         }
 
         return locker;
