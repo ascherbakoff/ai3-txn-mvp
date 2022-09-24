@@ -10,7 +10,6 @@ import java.util.List;
 import java.util.Map.Entry;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.atomic.AtomicReference;
 
 public class SortedNonUniqueIndex implements Index {
     int col;
@@ -98,52 +97,49 @@ public class SortedNonUniqueIndex implements Index {
         Cursor<Entry<Tuple, Cursor<VersionChain<Tuple>>>> cur = index
                 .scan(query0.lowerKey, query0.lowerInclusive, query0.upperKey, query0.upperInclusive);
 
-        AtomicReference<Cursor<VersionChain<Tuple>>> ref = new AtomicReference<>();
-
         return new AsyncCursor<VersionChain<Tuple>>() {
+            Cursor<VersionChain<Tuple>> rowIter;
+
             @Override
             public CompletableFuture<VersionChain<Tuple>> nextAsync() {
-                return getNext(query0, txId, txState, cur, ref);
+                return getNext(query0, txId, txState, cur);
+            }
+
+            private CompletableFuture<VersionChain<Tuple>> getNext(
+                    RangeQuery query0, UUID txId,
+                    TxState txState,
+                    Cursor<Entry<Tuple, Cursor<VersionChain<Tuple>>>> iter
+            ) {
+                if (rowIter != null) {
+                    VersionChain<Tuple> tup = rowIter.next();
+
+                    if (tup != null)
+                        return CompletableFuture.completedFuture(tup);
+                }
+
+                // Optimistically read next entry
+                Entry<Tuple, Cursor<VersionChain<Tuple>>> next = iter.next();
+
+                Tuple lockKey = next == null ? query0.upperKey == null ? Tuple.INF : query0.upperKey : next.getKey();
+
+                Lock lock = lockTable.getOrAddEntry(lockKey);
+
+                txState.addLock(lock);
+
+                return lock.acquire(txId, LockMode.S).thenComposeAsync(lockMode -> { // Avoid recursion.
+                    if (next == null)
+                        return CompletableFuture.completedFuture(null);
+
+                    // Re-check after lock acquisition.
+                    if (index.contains(lockKey)) {
+                        rowIter = next.getValue();
+
+                        return getNext(query0, txId, txState, iter);
+                    } else {
+                        return getNext(query0, txId, txState, iter);
+                    }
+                });
             }
         };
-    }
-
-    private CompletableFuture<VersionChain<Tuple>> getNext(
-            RangeQuery query0, UUID txId,
-            TxState txState,
-            Cursor<Entry<Tuple, Cursor<VersionChain<Tuple>>>> iter,
-            AtomicReference<Cursor<VersionChain<Tuple>>> ref
-    ) {
-        if (ref.get() != null) {
-            VersionChain<Tuple> tup = ref.get().next();
-
-            if (tup != null)
-                return CompletableFuture.completedFuture(tup);
-        }
-
-        // Optimistically read next entry
-        Entry<Tuple, Cursor<VersionChain<Tuple>>> next = iter.next();
-
-        Tuple lockKey = next == null ? query0.upperKey == null ? Tuple.INF : query0.upperKey : next.getKey();
-
-        Lock lock = lockTable.getOrAddEntry(lockKey);
-
-        txState.addLock(lock);
-
-        return lock.acquire(txId, LockMode.S).thenComposeAsync(lockMode -> { // Avoid recursion.
-            if (next == null)
-                return CompletableFuture.completedFuture(null);
-
-            // Re-check after lock acquisition.
-            if (index.contains(lockKey)) {
-                Cursor<VersionChain<Tuple>> value = next.getValue();
-
-                ref.set(value);
-
-                return getNext(query0, txId, txState, iter, ref);
-            } else {
-                return getNext(query0, txId, txState, iter, ref);
-            }
-        });
     }
 }

@@ -42,7 +42,7 @@ public class HashUniqueIndex extends HashNonUniqueIndex {
 
                 txState.addLock(lock0);
 
-                futs.add(lock0.acquire(txId, LockMode.X).thenAccept(ignored0 -> {
+                futs.add(lock0.acquire(txId, LockMode.X).thenAccept(ignored -> {
                     Cursor<VersionChain<Tuple>> rowIds = index.scan(newVal);
 
                     VersionChain<Tuple> rowId0;
@@ -58,7 +58,7 @@ public class HashUniqueIndex extends HashNonUniqueIndex {
                         }
                     }
 
-                    if (index.insert(newVal, rowId)) {
+                    if (index.insert(newVal, rowId)) { // Add undo action only if the entry was inserted by this transaction.
                         txState.addUndo(() -> index.remove(newVal, rowId));
                     }
                 }));

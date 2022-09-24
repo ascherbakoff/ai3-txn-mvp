@@ -8,7 +8,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.atomic.AtomicReference;
 
 public class HashNonUniqueIndex implements Index {
     int col;
@@ -64,23 +63,20 @@ public class HashNonUniqueIndex implements Index {
 
     @Override
     public AsyncCursor<VersionChain<Tuple>> eq(UUID txId, TxState txState, EqQuery query0) {
-        AtomicReference<Cursor<VersionChain<Tuple>>> first = new AtomicReference<>();
-
         return new AsyncCursor<VersionChain<Tuple>>() {
+            Cursor<VersionChain<Tuple>> iter;
+
             @Override
             public CompletableFuture<VersionChain<Tuple>> nextAsync() {
-                Cursor<VersionChain<Tuple>> iter = first.get();
                 if (iter == null) {
                     Lock lock = lockTable.getOrAddEntry(query0.queryKey);
 
                     txState.addLock(lock);
 
                     return lock.acquire(txId, LockMode.S).thenApply(ignored -> {
-                        Cursor<VersionChain<Tuple>> iter0 = index.scan(query0.queryKey);
+                        iter = index.scan(query0.queryKey);
 
-                        first.set(iter0);
-
-                        return iter0.next();
+                        return iter.next();
                     });
                 } else {
                     VersionChain<Tuple> tup = iter.next();
