@@ -15,7 +15,6 @@ import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Disabled;
-import org.junit.jupiter.api.Test;
 
 public class MVStoreFullScanTest {
     MVStoreImpl store;
