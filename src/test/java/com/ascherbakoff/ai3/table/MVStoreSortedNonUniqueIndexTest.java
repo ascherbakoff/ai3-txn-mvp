@@ -120,4 +120,137 @@ public class MVStoreSortedNonUniqueIndexTest extends MVStoreBasicNonUniqueIndexT
         List<VersionChain<Tuple>> rows = fut.join();
         assertTrue(rows.isEmpty());
     }
+
+    /**
+     * Let us assume that T1 had done a range scan from 2 through 10.
+     * If now T1 were to insert 8 and it were to lock 8 only in the IX mode, then that would permit T2 to insert 7 (T2’s request of the IX
+     * lock on 7 would be compatible with the IX lock held by T1) and commit. If now the T1 were to repeat its scan, then it would
+     * retrieve 7, which would be a violation of the serializability. When T1 requested IX on 10, during the insert of 8, and found that
+     * it already had an S lock on 10, then it should have obtained an X lock on 8. The latter would have prevented T2 from inserting
+     * 7 until Tl committed.
+     */
+    @Test
+    public void testLockStateReplication() {
+        UUID txId = new UUID(0, 1);
+        UUID txId2 = new UUID(0, 2);
+
+        store.insert(Tuple.create(1, "val0"), txId).join();
+        store.insert(Tuple.create(2, "val2"), txId).join();
+        store.insert(Tuple.create(5, "val5"), txId).join();
+        store.insert(Tuple.create(10, "val10"), txId).join();
+        store.insert(Tuple.create(20, "val20"), txId).join();
+
+        List<VersionChain<Tuple>> rows = store.query(new RangeQuery(0, Tuple.create(2), true, Tuple.create(10), true), txId)
+                .loadAll(new ArrayList<>()).join();
+
+        assertEquals(3, rows.size());
+
+        store.insert(Tuple.create(8, "val8"), txId).join();
+
+        CompletableFuture<VersionChain<Tuple>> fut = store.insert(Tuple.create(7, "val7"), txId2);
+        assertFalse(fut.isDone());
+
+        rows = store.query(new RangeQuery(0, Tuple.create(2), true, Tuple.create(10), true), txId)
+                .loadAll(new ArrayList<>()).join();
+
+        assertEquals(4, rows.size());
+
+        store.commit(txId, Timestamp.now());
+
+        fut.join();
+
+        rows = store.query(new RangeQuery(0, Tuple.create(2), true, Tuple.create(10), true), txId2)
+                .loadAll(new ArrayList<>()).join();
+
+        assertEquals(5, rows.size());
+    }
+
+    /**
+     * T1 might have a SIX lock on 10 because it had first inserted 10 (getting a commit duration IX on it) and later did a scan of 2
+     * through 10 (getting a commit duration S lock on 10, which causes the resultant hold mode to be changed from IX to SIX).
+     */
+    @Test
+    public void testLockStateReplication2() {
+        UUID txId = new UUID(0, 1);
+        UUID txId2 = new UUID(0, 2);
+
+        store.insert(Tuple.create(1, "val0"), txId).join();
+        store.insert(Tuple.create(2, "val2"), txId).join();
+        store.insert(Tuple.create(5, "val5"), txId).join();
+        store.insert(Tuple.create(20, "val20"), txId).join();
+
+        List<VersionChain<Tuple>> rows = store.query(new RangeQuery(0, Tuple.create(2), true, Tuple.create(10), true), txId)
+                .loadAll(new ArrayList<>()).join();
+
+        assertEquals(2, rows.size());
+
+        store.insert(Tuple.create(10, "val10"), txId).join();
+
+        rows = store.query(new RangeQuery(0, Tuple.create(2), true, Tuple.create(10), true), txId)
+                .loadAll(new ArrayList<>()).join();
+
+        assertEquals(3, rows.size());
+
+        store.insert(Tuple.create(8, "val8"), txId).join();
+
+        CompletableFuture<VersionChain<Tuple>> fut = store.insert(Tuple.create(7, "val7"), txId2);
+        assertFalse(fut.isDone());
+
+        rows = store.query(new RangeQuery(0, Tuple.create(2), true, Tuple.create(10), true), txId)
+                .loadAll(new ArrayList<>()).join();
+
+        assertEquals(4, rows.size());
+
+        store.commit(txId, Timestamp.now());
+
+        fut.join();
+
+        rows = store.query(new RangeQuery(0, Tuple.create(2), true, Tuple.create(10), true), txId2)
+                .loadAll(new ArrayList<>()).join();
+
+        assertEquals(5, rows.size());
+    }
+
+    /**
+     * T1 might have an X lock on 8 because it had inserted 8 and X state was replicated to 8 due to previously S locked 10.
+     * Now, if 7 were to be inserted by T1 and locked only in the IX mode, then that would permit T2 to insert 6 and commit, causing
+     * subsequent T1 range scans to see 6.
+     */
+    @Test
+    public void testLockStateReplication3() {
+        UUID txId = new UUID(0, 1);
+        UUID txId2 = new UUID(0, 2);
+
+        store.insert(Tuple.create(1, "val0"), txId).join();
+        store.insert(Tuple.create(2, "val2"), txId).join();
+        store.insert(Tuple.create(5, "val5"), txId).join();
+        store.insert(Tuple.create(10, "val10"), txId).join();
+        store.insert(Tuple.create(20, "val20"), txId).join();
+
+        List<VersionChain<Tuple>> rows = store.query(new RangeQuery(0, Tuple.create(2), true, Tuple.create(10), true), txId)
+                .loadAll(new ArrayList<>()).join();
+
+        assertEquals(3, rows.size());
+
+        store.insert(Tuple.create(8, "val8"), txId).join();
+
+        store.insert(Tuple.create(7, "val7"), txId).join();
+
+        CompletableFuture<VersionChain<Tuple>> fut = store.insert(Tuple.create(6, "val6"), txId2);
+        assertFalse(fut.isDone());
+
+        rows = store.query(new RangeQuery(0, Tuple.create(2), true, Tuple.create(10), true), txId)
+                .loadAll(new ArrayList<>()).join();
+
+        assertEquals(5, rows.size());
+
+        store.commit(txId, Timestamp.now());
+
+        fut.join();
+
+        rows = store.query(new RangeQuery(0, Tuple.create(2), true, Tuple.create(10), true), txId2)
+                .loadAll(new ArrayList<>()).join();
+
+        assertEquals(6, rows.size());
+    }
 }
