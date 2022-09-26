@@ -35,9 +35,6 @@ public abstract class MVStoreBasicTest {
         store.commit(txId, Timestamp.now());
         assertNull(store.txnLocalMap.get(txId));
 
-        List<VersionChain<Tuple>> rows = store.query(new ScanQuery(), txId).loadAll(new ArrayList<>(3)).join();
-        assertEquals(3, rows.size());
-
         assertEquals(t0, getSingle(txId, 0, Tuple.create(0)));
         assertEquals(t1, getSingle(txId, 0, Tuple.create(1)));
         assertEquals(t2, getSingle(txId, 0, Tuple.create(2)));
@@ -185,21 +182,6 @@ public abstract class MVStoreBasicTest {
         // TX3: id2 = insert [bill, 100], TX3
         store.insert(Tuple.create(0, "val2"), txId3).join(); // Insert must success.
         store.commit(txId3, Timestamp.now());
-    }
-
-    @Test
-    public void testConcurrentTransactions() {
-        UUID txId1 = new UUID(0, 0);
-        store.insert(Tuple.create(0, "val0"), txId1).join();
-
-        UUID txId2 = new UUID(0, 1);
-        store.insert(Tuple.create(1, "val1"), txId2).join();
-
-        List<VersionChain<Tuple>> rows1 = store.query(new ScanQuery(), txId1).loadAll(new ArrayList<>()).join();
-        assertEquals(2, rows1.size());
-
-        List<VersionChain<Tuple>> rows2 = store.query(new ScanQuery(), txId2).loadAll(new ArrayList<>()).join();
-        assertEquals(2, rows2.size());
     }
 
     @Test

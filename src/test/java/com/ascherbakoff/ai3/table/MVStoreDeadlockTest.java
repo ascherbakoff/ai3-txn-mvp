@@ -1,6 +1,7 @@
 package com.ascherbakoff.ai3.table;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
@@ -9,8 +10,11 @@ import com.ascherbakoff.ai3.lock.DeadlockPrevention;
 import com.ascherbakoff.ai3.lock.LockException;
 import com.ascherbakoff.ai3.lock.LockTable;
 import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 public class MVStoreDeadlockTest {
@@ -48,5 +52,23 @@ public class MVStoreDeadlockTest {
         assertEquals(tup1, Tuple.create(0, "val0"));
 
         assertThrows(LockException.class, () -> store.update(row0, Tuple.create(0, "val1"), id3));
+    }
+
+    /**
+     * TODO FIXME reproduces deadlock on table locks, which are not yet implemented.
+     */
+    @Disabled
+    public void testConcurrentTransactions() {
+        UUID txId1 = new UUID(0, 0);
+        store.insert(Tuple.create(0, "val0"), txId1).join();
+
+        UUID txId2 = new UUID(0, 1);
+        store.insert(Tuple.create(1, "val1"), txId2).join();
+
+        CompletableFuture<List<VersionChain<Tuple>>> fut1 = store.query(new ScanQuery(), txId1).loadAll(new ArrayList<>());
+        assertFalse(fut1.isDone());
+
+        CompletableFuture<List<VersionChain<Tuple>>> fut2 = store.query(new ScanQuery(), txId2).loadAll(new ArrayList<>());
+        assertFalse(fut2.isDone());
     }
 }
