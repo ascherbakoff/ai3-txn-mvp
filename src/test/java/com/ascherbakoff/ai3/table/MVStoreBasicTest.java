@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 
 import com.ascherbakoff.ai3.clock.Timestamp;
 import java.util.ArrayList;
@@ -11,6 +12,7 @@ import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
+import java.util.function.BooleanSupplier;
 import java.util.function.Function;
 import org.jetbrains.annotations.Nullable;
 import org.junit.jupiter.api.Test;
@@ -247,5 +249,21 @@ public abstract class MVStoreBasicTest {
         List<Tuple> rows = query.getAll();
         assertTrue(rows.size() <= 1);
         return rows.isEmpty() ? null : rows.get(0);
+    }
+
+    boolean waitForCondition(BooleanSupplier cond, long timeout) {
+        long ts = System.currentTimeMillis() + timeout;
+        while(System.currentTimeMillis() < ts) {
+            try {
+                if (cond.getAsBoolean())
+                    return true;
+
+                Thread.sleep(50);
+            } catch (InterruptedException e) {
+                fail("Failed to wait for condition");
+            }
+        }
+
+        return false;
     }
 }

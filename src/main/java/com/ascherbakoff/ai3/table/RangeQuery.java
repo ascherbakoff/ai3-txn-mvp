@@ -1,6 +1,10 @@
 package com.ascherbakoff.ai3.table;
 
+import java.util.concurrent.CyclicBarrier;
+import org.jetbrains.annotations.Nullable;
+
 public class RangeQuery implements Query {
+    public @Nullable CyclicBarrier delayOnNext;
     int col;
     Tuple lowerKey;
     boolean lowerInclusive;

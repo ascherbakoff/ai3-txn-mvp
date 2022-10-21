@@ -9,6 +9,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map.Entry;
 import java.util.UUID;
+import java.util.concurrent.BrokenBarrierException;
 import java.util.concurrent.CompletableFuture;
 
 public class SortedNonUniqueIndex implements Index {
@@ -121,6 +122,14 @@ public class SortedNonUniqueIndex implements Index {
                 Entry<Tuple, Cursor<VersionChain<Tuple>>> next = iter.next();
 
                 Tuple lockKey = next == null ? query0.upperKey == null ? Tuple.INF : query0.upperKey : next.getKey();
+
+                if (query0.delayOnNext != null) {
+                    try {
+                        query0.delayOnNext.await();
+                    } catch (Exception e) {
+                        throw new RuntimeException(e);
+                    }
+                }
 
                 Lock lock = lockTable.getOrAddEntry(lockKey);
 

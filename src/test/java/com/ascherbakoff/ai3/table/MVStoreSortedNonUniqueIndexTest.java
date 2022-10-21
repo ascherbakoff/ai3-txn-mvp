@@ -2,6 +2,7 @@ package com.ascherbakoff.ai3.table;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.ascherbakoff.ai3.clock.Timestamp;
@@ -12,6 +13,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CyclicBarrier;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Test;
 
 public class MVStoreSortedNonUniqueIndexTest extends MVStoreBasicNonUniqueIndexTest {
@@ -252,5 +257,48 @@ public class MVStoreSortedNonUniqueIndexTest extends MVStoreBasicNonUniqueIndexT
                 .loadAll(new ArrayList<>()).join();
 
         assertEquals(6, rows.size());
+    }
+
+    @Test // TODO FIXME !
+    public void testLockBetween() throws Exception {
+        UUID txId = new UUID(0, 1);
+
+        store.insert(Tuple.create(1, "val0"), txId).join();
+        store.insert(Tuple.create(3, "val3"), txId).join();
+        store.commit(txId, Timestamp.now());
+
+        UUID txId2 = new UUID(0, 2);
+
+        RangeQuery query = new RangeQuery(0, Tuple.create(1), true, Tuple.create(3), true);
+        AsyncCursor<VersionChain<Tuple>> cur = store.query(query, txId2);
+
+        VersionChain<Tuple> tup0 = cur.nextAsync().join();
+
+        query.delayOnNext = new CyclicBarrier(2);
+
+        ExecutorService ex = Executors.newSingleThreadExecutor();
+        CompletableFuture<VersionChain<Tuple>> fut = CompletableFuture.supplyAsync(() -> cur.nextAsync(), ex).thenCompose(x -> x);
+
+        assertTrue(waitForCondition(() -> query.delayOnNext.getNumberWaiting() == 1, 1000));
+
+        UUID txId3 = new UUID(0, 3);
+        store.insert(Tuple.create(2, "val2"), txId3).join();
+        store.commit(txId3, Timestamp.now());
+
+        query.delayOnNext.await();
+
+        VersionChain<Tuple> tup1 = fut.join();
+
+        query.delayOnNext = null;
+
+        assertNull(cur.nextAsync().join());
+
+        List<VersionChain<Tuple>> rows = store.query(new RangeQuery(0, Tuple.create(1), true, Tuple.create(3), true), txId)
+                .loadAll(new ArrayList<>()).join();
+
+        assertEquals(2, rows.size(), "Phantom has appeared");
+
+        ex.shutdown();
+        assertTrue(ex.awaitTermination(5, TimeUnit.SECONDS));
     }
 }
