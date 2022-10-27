@@ -74,8 +74,10 @@ public class SortedNonUniqueIndex implements Index {
                             txState.addUndo(() -> index.remove(newVal, rowId));
                         }
 
-                        if (prevMode != null && prevMode != LockMode.IX) { // Lock was upgraded.
-                            LockMode mode0 = nextLock.downgrade(txId, prevMode);
+                        if (prevMode != null) {
+                            if (prevMode != LockMode.IX) { // Lock was upgraded.
+                                LockMode mode0 = nextLock.downgrade(txId, prevMode);
+                            } // Otherwise do nothing.
                         } else {
                             nextLock.release(txId);
                             txState.locks.remove(nextLock);
