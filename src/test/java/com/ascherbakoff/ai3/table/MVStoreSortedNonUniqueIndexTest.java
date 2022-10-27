@@ -316,4 +316,19 @@ public class MVStoreSortedNonUniqueIndexTest extends MVStoreBasicNonUniqueIndexT
         store.commit(txId, Timestamp.now());
         assertEquals(Tuple.create(2, "val2"), fut.join());
     }
+
+    @Test
+    public void testReenterUnlockSameTxRollback() {
+        UUID txId = new UUID(0, 1);
+        UUID txId2 = new UUID(0, 2);
+
+        store.insert(Tuple.create(2, "val2"), txId).join();
+        store.insert(Tuple.create(1, "val1"), txId).join(); // This insert shouldn't invalidate next lock.
+
+        CompletableFuture<Tuple> fut = getSingleAsync(txId2, 0, Tuple.create(2));
+        assertFalse(fut.isDone());
+
+        store.abort(txId);
+        assertNull(fut.join());
+    }
 }
