@@ -7,6 +7,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.EnumSet;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
@@ -530,7 +532,7 @@ public class LockTableTest {
         l1.join();
         assertTrue(l1.id == id1 && l1.mode == LockMode.X);
 
-        assertEquals(LockMode.X, lock.downgrade(id1, lockMode));
+        assertEquals(LockMode.X, lock.downgrade(id1, LockMode.X, lockMode));
 
         assertTrue(lock.owners.size() == 1);
         assertTrue(lock.waiters.isEmpty());
@@ -558,7 +560,7 @@ public class LockTableTest {
         assertEquals(LockMode.S, l1_2.join());
         assertTrue(l1_2.id == id1 && l1_2.mode == LockMode.SIX);
 
-        assertEquals(LockMode.SIX, lock.downgrade(id1, LockMode.S));
+        assertEquals(LockMode.SIX, lock.downgrade(id1, LockMode.IX, LockMode.S));
 
         assertTrue(lock.owners.size() == 1);
         assertTrue(lock.waiters.isEmpty());
@@ -581,7 +583,8 @@ public class LockTableTest {
         Locker l2 = lock.acquire(id2, LockMode.S);
         assertFalse(l2.isDone());
 
-        assertEquals(LockMode.SIX, lock.downgrade(id1, LockMode.S));
+        // TODO invalid call
+        assertEquals(LockMode.SIX, lock.downgrade(id1, null, LockMode.S));
 
         l2.join();
     }
@@ -609,7 +612,7 @@ public class LockTableTest {
         Locker l4 = lock.acquire(id4, LockMode.S);
         assertFalse(l4.isDone());
 
-        assertEquals(LockMode.SIX, lock.downgrade(id2, LockMode.S));
+        assertEquals(LockMode.SIX, lock.downgrade(id2, LockMode.SIX, LockMode.S));
 
         l3.join();
         l4.join();
@@ -638,7 +641,7 @@ public class LockTableTest {
         Locker l4 = lock.acquire(id4, LockMode.X);
         assertFalse(l4.isDone());
 
-        assertEquals(LockMode.SIX, lock.downgrade(id2, LockMode.S));
+        assertEquals(LockMode.SIX, lock.downgrade(id2, LockMode.SIX, LockMode.S));
 
         l3.join();
 
@@ -660,5 +663,50 @@ public class LockTableTest {
     @Test
     public void testInvalidRelease() {
         // TODO
+    }
+
+    @Test
+    public void testConcurrentDowngrade() throws Exception {
+        Lock lock = lockTable.getOrAddEntry(0);
+
+        UUID tx1 = UUID.randomUUID();
+
+        Locker locker1 = lock.acquire(tx1, LockMode.S);
+        assertTrue(locker1.isDone());
+
+        var shortTermLocked = new CountDownLatch(1);
+        var xLockIsTaken = new CountDownLatch(1);
+        var shortTermUnlocked = new CountDownLatch(1);
+
+        new Thread(() -> {
+            // Short term lock.
+            var shortLocker= lock.acquire(tx1, LockMode.IX);
+            shortTermLocked.countDown();
+
+            shortLocker.thenAccept(prevMode -> {
+                //Do something...
+
+                try {
+                    xLockIsTaken.await();
+                } catch (InterruptedException e) {
+                    throw new RuntimeException(e);
+                }
+
+                lock.downgrade(tx1, LockMode.IX, prevMode);
+
+                shortTermUnlocked.countDown();
+            });
+        }).start();
+
+        shortTermLocked.await();
+
+        Locker locker2 = lock.acquire(tx1, LockMode.SIX);
+        assertTrue(locker2.isDone());
+
+        xLockIsTaken.countDown();
+
+        shortTermUnlocked.await();
+
+        assertEquals(LockMode.SIX, lock.owners.get(tx1).getMode());
     }
 }

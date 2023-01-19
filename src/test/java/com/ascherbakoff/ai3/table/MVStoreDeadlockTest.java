@@ -14,7 +14,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 public class MVStoreDeadlockTest {
@@ -57,7 +56,7 @@ public class MVStoreDeadlockTest {
     /**
      * TODO FIXME reproduces deadlock on table locks, which are not yet implemented.
      */
-    @Disabled
+    @Test
     public void testConcurrentTransactions() {
         UUID txId1 = new UUID(0, 0);
         store.insert(Tuple.create(0, "val0"), txId1).join();

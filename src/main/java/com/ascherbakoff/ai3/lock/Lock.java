@@ -89,6 +89,53 @@ public class Lock {
         return locker;
     }
 
+    /**
+     * Must be called only if lock was upgraded.
+     * @param lockerId
+     * @param acqMode
+     * @param mode
+     * @return
+     */
+    public synchronized LockMode downgrade(UUID lockerId, LockMode acqMode, LockMode mode) {
+        Locker locker = owners.get(lockerId);
+
+        if (locker == null) {
+            throw new LockException("Bad locker");
+        }
+
+        if (LockTable.supremum(mode, acqMode) != locker.mode) {
+            return locker.mode;
+        }
+
+        LockMode tmp = locker.mode;
+
+        locker.mode = mode;
+
+        if (!waiters.isEmpty()) {
+            while (!waiters.isEmpty()) {
+                Locker next = waiters.get(0);
+
+                if (owners.size() == 1 && next.id.equals(locker.id)) {
+                    LockMode prev = locker.mode;
+                    LockMode supremum = LockTable.supremum(prev, next.mode);
+                    next.mode = supremum;
+                    locker.mode = supremum;
+                    next.completeAsync(() -> prev);
+
+                    waiters.remove(0);
+                } else if (compatible(next)) {
+                    next.completeAsync(() -> null);
+                    waiters.remove(0);
+                    owners.put(next.id, next);
+                } else {
+                    break;
+                }
+            }
+        }
+
+        return tmp;
+    }
+
     public synchronized LockMode downgrade(UUID lockerId, LockMode mode) {
         Locker locker = owners.get(lockerId);
 
@@ -97,7 +144,8 @@ public class Lock {
         }
 
         if (LockTable.supremum(mode, locker.mode) != locker.mode) {
-            throw new LockException("Bad downgrade mode " + locker.mode + " -> " + mode);
+             throw new LockException("Bad downgrade mode " + locker.mode + " -> " + mode);
+            //return locker.mode;
         }
 
         LockMode tmp = locker.mode;

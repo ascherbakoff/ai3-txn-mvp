@@ -20,6 +20,10 @@ public class Timestamp implements Comparable<Timestamp> {
         return new Timestamp(seq.incrementAndGet());
     }
 
+    public static Timestamp min() {
+        return new Timestamp(0);
+    }
+
     @Override
     public String toString() {
         return "Timestamp{" +

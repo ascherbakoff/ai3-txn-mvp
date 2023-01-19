@@ -9,7 +9,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map.Entry;
 import java.util.UUID;
-import java.util.concurrent.BrokenBarrierException;
 import java.util.concurrent.CompletableFuture;
 
 public class SortedNonUniqueIndex implements Index {
@@ -75,9 +74,7 @@ public class SortedNonUniqueIndex implements Index {
                         }
 
                         if (prevMode != null) {
-                            if (prevMode != LockMode.IX) { // Lock was upgraded.
-                                LockMode mode0 = nextLock.downgrade(txId, prevMode);
-                            } // Otherwise do nothing.
+                            nextLock.downgrade(txId, LockMode.IX, prevMode);
                         } else {
                             nextLock.release(txId);
                             txState.locks.remove(nextLock);

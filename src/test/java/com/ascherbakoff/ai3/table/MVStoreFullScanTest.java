@@ -32,7 +32,6 @@ public class MVStoreFullScanTest {
      * TODO FIXME this tests demonstrates broken snapshot isolation for scan queries. It can be fixed by using table locks, which are
      * not yet implemented.
      */
-    @Disabled
     public void testConcurrentTransactions() {
         UUID txId1 = new UUID(0, 0);
         store.insert(Tuple.create(0, "val0"), txId1).join();

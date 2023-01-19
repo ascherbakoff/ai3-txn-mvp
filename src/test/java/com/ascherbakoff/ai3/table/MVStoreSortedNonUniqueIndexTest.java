@@ -17,6 +17,7 @@ import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 public class MVStoreSortedNonUniqueIndexTest extends MVStoreBasicNonUniqueIndexTest {
@@ -259,7 +260,8 @@ public class MVStoreSortedNonUniqueIndexTest extends MVStoreBasicNonUniqueIndexT
         assertEquals(6, rows.size());
     }
 
-    @Test // TODO FIXME !
+    // TODO FIXME !
+    @Test
     public void testLockBetween() throws Exception {
         UUID txId = new UUID(0, 1);
 
@@ -287,7 +289,7 @@ public class MVStoreSortedNonUniqueIndexTest extends MVStoreBasicNonUniqueIndexT
 
         query.delayOnNext.await();
 
-        VersionChain<Tuple> tup1 = fut.join();
+        fut.join();
 
         query.delayOnNext = null;
 
