@@ -46,11 +46,16 @@ public class Node {
         return CompletableFuture.supplyAsync(new Supplier<Response>() {
             @Override
             public Response get() {
-                assert request.getLwm().compareTo(lwm) >= 0; // Cannot get outdated request by the replicator design.
+                if (request.getLwm().compareTo(Node.this.lwm) > 0) {
+                    Node.this.lwm = request.getLwm(); // Ignore stale sync requests - this is safe.
+                }
 
-                Node.this.lwm = request.getLwm();
+                switch (request.getType()) {
+                    case DATA:
+                        // TODO handle request.
+                        break;
+                }
 
-                // TODO handle request.
                 return new Response();
             }
         }, executor);

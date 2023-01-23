@@ -25,6 +25,29 @@ public class Timestamp implements Comparable<Timestamp> {
     }
 
     @Override
+    public boolean equals(Object o) {
+        if (this == o) {
+            return true;
+        }
+        if (o == null || getClass() != o.getClass()) {
+            return false;
+        }
+
+        Timestamp timestamp = (Timestamp) o;
+
+        if (counter != timestamp.counter) {
+            return false;
+        }
+
+        return true;
+    }
+
+    @Override
+    public int hashCode() {
+        return (int) (counter ^ (counter >>> 32));
+    }
+
+    @Override
     public String toString() {
         return "Timestamp{" +
                 "counter=" + counter +

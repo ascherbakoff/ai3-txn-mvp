@@ -3,16 +3,26 @@ package com.ascherbakoff.ai3.replication;
 import com.ascherbakoff.ai3.clock.Timestamp;
 
 public class Request {
-    int type;
+    private Timestamp ts;
+
+    Type type;
     private Timestamp lwm;
     private Object payload;
 
-    public int getType() {
+    public Type getType() {
         return type;
     }
 
-    public void setType(int type) {
+    public void setType(Type type) {
         this.type = type;
+    }
+
+    public void setTs(Timestamp ts) {
+        this.ts = ts;
+    }
+
+    public Timestamp getTs() {
+        return ts;
     }
 
     public Timestamp getLwm() {
@@ -29,5 +39,9 @@ public class Request {
 
     public Object getPayload() {
         return payload;
+    }
+
+    public enum Type {
+        SYNC, DATA
     }
 }
