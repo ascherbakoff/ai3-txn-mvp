@@ -1,7 +1,6 @@
 package com.ascherbakoff.ai3.replication;
 
 import com.ascherbakoff.ai3.clock.Timestamp;
-import com.ascherbakoff.ai3.replication.Request.Type;
 import com.ascherbakoff.ai3.tracker.NodeId;
 import com.ascherbakoff.ai3.tracker.Topology;
 import java.lang.System.Logger.Level;
@@ -10,10 +9,8 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map.Entry;
 import java.util.Set;
-import java.util.SortedMap;
 import java.util.TreeMap;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.BiConsumer;
 import java.util.function.Predicate;
 import org.jetbrains.annotations.Nullable;
@@ -41,7 +38,7 @@ public class Replicator {
         this.client = new RpcClient(topology);
     }
 
-    public Inflight send(Object payload) {
+    public Inflight send(Command payload) {
         Inflight inflight;
 
         synchronized (this) {
@@ -52,7 +49,6 @@ public class Replicator {
 
         Request request = new Request();
         request.setTs(inflight.ts);
-        request.setType(Type.DATA);
         request.setLwm(lwm);
         request.setPayload(payload);
 
@@ -67,7 +63,7 @@ public class Replicator {
 
                 blockedMsgs.add(msgData);
 
-                LOGGER.log(Level.INFO, "Blocked message to={0} id={1} msg={2}", nodeId.toString(), msgData[1], request);
+                LOGGER.log(Level.DEBUG, "Blocked message to={0} id={1} msg={2}", nodeId.toString(), msgData[1], request);
 
                 return inflight;
             }
@@ -79,9 +75,9 @@ public class Replicator {
     }
 
     private void send(Request request, Inflight inflight) {
-        LOGGER.log(Level.INFO, "Send id={0}, curLwm={1}", request.getTs(), lwm);
+        LOGGER.log(Level.DEBUG, "Send id={0}, curLwm={1}", request.getTs(), lwm);
 
-        client.send(nodeId, request).whenComplete(new BiConsumer<Response, Throwable>() {
+        client.send(nodeId, request).whenCompleteAsync(new BiConsumer<Response, Throwable>() {
             @Override
             public void accept(Response response, Throwable throwable) {
                 synchronized (Replicator.this) {
@@ -101,7 +97,7 @@ public class Replicator {
                             assert entry.getKey().compareTo(lwm) > 0;
                             lwm = entry.getKey(); // Adjust lwm.
 
-                            LOGGER.log(Level.INFO, "OnAck id={0}, lwm={1}", request.getTs(), lwm);
+                            LOGGER.log(Level.DEBUG, "OnAck id={0}, lwm={1}", request.getTs(), lwm);
 
                             entry.getValue().setDone(response); // TODO move out of lock.
                         } else {
@@ -152,7 +148,6 @@ public class Replicator {
     public CompletableFuture<Response> idleSync() {
         Request r = new Request();
         r.setTs(Timestamp.now()); // Propagate ts in idle sync.
-        r.setType(Type.SYNC);
         r.setLwm(lwm);
         return client.send(nodeId, r);
     }

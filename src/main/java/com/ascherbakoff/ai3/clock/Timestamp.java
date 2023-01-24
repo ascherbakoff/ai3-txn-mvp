@@ -11,6 +11,10 @@ public class Timestamp implements Comparable<Timestamp> {
         this.counter = counter;
     }
 
+    public long getCounter() {
+        return counter;
+    }
+
     @Override
     public int compareTo(@NotNull Timestamp o) {
         return Long.compare(counter, o.counter);

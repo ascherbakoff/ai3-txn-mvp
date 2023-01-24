@@ -15,6 +15,7 @@ import java.lang.System.Logger.Level;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 
 public class ReplicationTest extends BasicTest {
@@ -44,11 +45,11 @@ public class ReplicationTest extends BasicTest {
         t.regiser(bob);
 
         Replicator aliceToBob = new Replicator(bob.id(), t);
-        Response resp0 = aliceToBob.send(new Object()).future().join();
+        Response resp0 = aliceToBob.send(new Put(0, 0)).future().join();
         assertNotNull(resp0);
 
         Replicator bobToAlice = new Replicator(alice.id(), t);
-        Response resp1 = bobToAlice.send(new Object()).future().join();
+        Response resp1 = bobToAlice.send(new Put(1, 1)).future().join();
         assertNotNull(resp1);
 
         assertNotSame(resp0, resp1);
@@ -65,11 +66,11 @@ public class ReplicationTest extends BasicTest {
         t.regiser(bob);
 
         Replicator aliceToBob = new Replicator(bob.id(), t);
-        assertNotNull(aliceToBob.send(new Object()).future().join());
+        assertNotNull(aliceToBob.send(new Put(0, 0)).future().join());
 
         Timestamp t0 = aliceToBob.getLwm();
 
-        assertNotNull(aliceToBob.send(new Object()).future().join());
+        assertNotNull(aliceToBob.send(new Put(1, 1)).future().join());
 
         Timestamp t1 = bob.getLwm();
         Timestamp t2 = aliceToBob.getLwm();
@@ -98,9 +99,9 @@ public class ReplicationTest extends BasicTest {
 
         Timestamp t0 = aliceToBob.getLwm();
 
-        Inflight i1 = aliceToBob.send(new Object());
-        Inflight i2 = aliceToBob.send(new Object());
-        Inflight i3 = aliceToBob.send(new Object());
+        Inflight i1 = aliceToBob.send(new Put(0, 0));
+        Inflight i2 = aliceToBob.send(new Put(1, 1));
+        Inflight i3 = aliceToBob.send(new Put(2, 2));
 
         assertEquals(t0, bob.getLwm());
 
@@ -142,8 +143,8 @@ public class ReplicationTest extends BasicTest {
 
         Timestamp t0 = aliceToBob.getLwm();
 
-        Inflight i1 = aliceToBob.send(new Object());
-        Inflight i2 = aliceToBob.send(new Object());
+        Inflight i1 = aliceToBob.send(new Put(0, 0));
+        Inflight i2 = aliceToBob.send(new Put(1, 1));
 
         assertEquals(t0, bob.getLwm());
 
@@ -151,7 +152,7 @@ public class ReplicationTest extends BasicTest {
         i1.future().join();
         assertEquals(t0, bob.getLwm());
 
-        Inflight i3 = aliceToBob.send(new Object());
+        Inflight i3 = aliceToBob.send(new Put(2, 2));
         aliceToBob.stopBlock(r -> r.getTs().equals(i3.ts()));
         assertTrue(waitForCondition(() -> i3.isAcked(), 1000));
         assertEquals(i1.ts(), bob.getLwm());
@@ -187,13 +188,15 @@ public class ReplicationTest extends BasicTest {
 
         int msgCnt = 100;
 
+        AtomicInteger x = new AtomicInteger();
         CountDownLatch l = new CountDownLatch(msgCnt);
 
         long ts = System.nanoTime();
 
         while(msgCnt-- > 0) {
             senderPool.execute(() -> {
-                aliceToBob.send(new Object()).future().thenAccept(r -> {
+                int val = x.incrementAndGet();
+                aliceToBob.send(new Put(val, val)).future().thenAccept(r -> {
                     l.countDown();
                 });
             });

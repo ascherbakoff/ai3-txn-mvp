@@ -13,7 +13,7 @@ import org.jetbrains.annotations.Nullable;
  * TODO remove a specific version.
  * @param <T>
  */
-class VersionChainRowStore<T> implements RowStore<VersionChain<T>, T> {
+public class VersionChainRowStore<T> implements RowStore<VersionChain<T>, T> {
     private Set<VersionChain<T>> heads = Collections.newSetFromMap(new ConcurrentHashMap<>());
 
     @Override
