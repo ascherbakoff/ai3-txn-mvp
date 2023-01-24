@@ -44,15 +44,34 @@ public class ReplicationTest extends BasicTest {
         t.regiser(alice);
         t.regiser(bob);
 
-        Replicator aliceToBob = new Replicator(bob.id(), t);
+        Replicator aliceToBob = new Replicator(alice, bob.id(), t);
         Response resp0 = aliceToBob.send(new Put(0, 0)).future().join();
         assertNotNull(resp0);
 
-        Replicator bobToAlice = new Replicator(alice.id(), t);
+        Replicator bobToAlice = new Replicator(bob, alice.id(), t);
         Response resp1 = bobToAlice.send(new Put(1, 1)).future().join();
         assertNotNull(resp1);
 
         assertNotSame(resp0, resp1);
+    }
+
+    @Test
+    public void testClock() {
+        Topology t = new Topology();
+
+        Node alice = new Node(new NodeId("alice"));
+        Node bob = new Node(new NodeId("bob"));
+
+        t.regiser(alice);
+        t.regiser(bob);
+
+        Replicator aliceToBob = new Replicator(alice, bob.id(), t);
+        aliceToBob.send(new Put(0, 0)).future().join();
+
+        Timestamp clock0 = alice.getClock();
+        Timestamp clock1 = bob.getClock();
+
+        assertEquals(clock0, clock1);
     }
 
     @Test
@@ -65,7 +84,7 @@ public class ReplicationTest extends BasicTest {
         t.regiser(alice);
         t.regiser(bob);
 
-        Replicator aliceToBob = new Replicator(bob.id(), t);
+        Replicator aliceToBob = new Replicator(alice, bob.id(), t);
         assertNotNull(aliceToBob.send(new Put(0, 0)).future().join());
 
         Timestamp t0 = aliceToBob.getLwm();
@@ -94,7 +113,7 @@ public class ReplicationTest extends BasicTest {
         t.regiser(alice);
         t.regiser(bob);
 
-        Replicator aliceToBob = new Replicator(bob.id(), t);
+        Replicator aliceToBob = new Replicator(alice, bob.id(), t);
         aliceToBob.block(r -> true);
 
         Timestamp t0 = aliceToBob.getLwm();
@@ -138,7 +157,7 @@ public class ReplicationTest extends BasicTest {
         t.regiser(alice);
         t.regiser(bob);
 
-        Replicator aliceToBob = new Replicator(bob.id(), t);
+        Replicator aliceToBob = new Replicator(alice, bob.id(), t);
         aliceToBob.block(r -> true);
 
         Timestamp t0 = aliceToBob.getLwm();
@@ -182,7 +201,7 @@ public class ReplicationTest extends BasicTest {
         t.regiser(alice);
         t.regiser(bob);
 
-        Replicator aliceToBob = new Replicator(bob.id(), t);
+        Replicator aliceToBob = new Replicator(alice, bob.id(), t);
 
         Executor senderPool = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors() * 2);
 

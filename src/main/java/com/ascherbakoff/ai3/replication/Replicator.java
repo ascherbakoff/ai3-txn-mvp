@@ -1,6 +1,7 @@
 package com.ascherbakoff.ai3.replication;
 
 import com.ascherbakoff.ai3.clock.Timestamp;
+import com.ascherbakoff.ai3.tracker.Node;
 import com.ascherbakoff.ai3.tracker.NodeId;
 import com.ascherbakoff.ai3.tracker.Topology;
 import java.lang.System.Logger.Level;
@@ -17,6 +18,7 @@ import org.jetbrains.annotations.Nullable;
 
 public class Replicator {
     private static System.Logger LOGGER = System.getLogger(Replicator.class.getName());
+    private final Node node;
 
     private NodeId nodeId;
 
@@ -32,7 +34,8 @@ public class Replicator {
 
     private List<Object[]> blockedMsgs = new ArrayList<>();
 
-    public Replicator(NodeId nodeId, Topology topology) {
+    public Replicator(Node node, NodeId nodeId, Topology topology) {
+        this.node = node;
         this.nodeId = nodeId;
         this.topology = topology;
         this.client = new RpcClient(topology);
@@ -80,6 +83,8 @@ public class Replicator {
         client.send(nodeId, request).whenCompleteAsync(new BiConsumer<Response, Throwable>() {
             @Override
             public void accept(Response response, Throwable throwable) {
+                node.update(response.getClock());
+
                 synchronized (Replicator.this) {
                     assert throwable == null : throwable; // TODO handle errors.
 
@@ -149,7 +154,10 @@ public class Replicator {
         Request r = new Request();
         r.setTs(Timestamp.now()); // Propagate ts in idle sync.
         r.setLwm(lwm);
-        return client.send(nodeId, r);
+        return client.send(nodeId, r).thenApply(response -> {
+            node.update(response.getClock());
+            return response;
+        });
     }
 
     public int inflights() {

@@ -20,6 +20,10 @@ public class Timestamp implements Comparable<Timestamp> {
         return Long.compare(counter, o.counter);
     }
 
+    public Timestamp adjust(long delta) {
+        return new Timestamp(counter + delta);
+    }
+
     public static Timestamp now() {
         return new Timestamp(seq.incrementAndGet());
     }
