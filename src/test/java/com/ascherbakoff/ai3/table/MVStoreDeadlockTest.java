@@ -5,10 +5,10 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
-import com.ascherbakoff.ai3.clock.Timestamp;
 import com.ascherbakoff.ai3.lock.DeadlockPrevention;
 import com.ascherbakoff.ai3.lock.LockException;
 import com.ascherbakoff.ai3.lock.LockTable;
+import com.ascherbakoff.ai3.util.BasicTest;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -16,7 +16,7 @@ import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import org.junit.jupiter.api.Test;
 
-public class MVStoreDeadlockTest {
+public class MVStoreDeadlockTest extends BasicTest {
     MVStoreImpl store;
 
     public MVStoreDeadlockTest() {
@@ -37,7 +37,7 @@ public class MVStoreDeadlockTest {
         UUID id3 = new UUID(0, 2);
 
         VersionChain<Tuple> rowId = store.insert(Tuple.create(0, "val0"), id1).join();
-        store.commit(id1, Timestamp.now());
+        store.commit(id1, clock.tick());
 
         VersionChain<Tuple> row0 = store.query(new EqQuery(0, Tuple.create(0)), id2).loadAll(new ArrayList<>()).join().get(0);
         VersionChain<Tuple> row1 = store.query(new EqQuery(0, Tuple.create(0)), id3).loadAll(new ArrayList<>()).join().get(0);

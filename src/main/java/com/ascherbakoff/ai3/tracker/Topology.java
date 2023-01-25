@@ -10,6 +10,10 @@ public class Topology {
         nodeMap.putIfAbsent(node.id(), node);
     }
 
+    public Node getNode(NodeId nodeId) {
+        return nodeMap.get(nodeId);
+    }
+
     public Map<NodeId, Node> getNodeMap() {
         return nodeMap;
     }

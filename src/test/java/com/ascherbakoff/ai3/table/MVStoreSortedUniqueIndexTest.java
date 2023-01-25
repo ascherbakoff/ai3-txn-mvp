@@ -182,9 +182,9 @@ public class MVStoreSortedUniqueIndexTest extends MVStoreBasicUniqueIndexTest {
                 .query(new RangeQuery(0, null, true, null, false), txId3).loadAll(new ArrayList<>());
 
         assertFalse(fut.isDone());
-        store.commit(txId, Timestamp.now());
+        store.commit(txId, clock.tick());
         assertFalse(fut.isDone());
-        store.commit(txId2, Timestamp.now());
+        store.commit(txId2, clock.tick());
 
         List<VersionChain<Tuple>> rows = fut.join();
         assertEquals(4, rows.size());

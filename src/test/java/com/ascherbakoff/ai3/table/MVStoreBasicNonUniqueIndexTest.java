@@ -40,8 +40,8 @@ public abstract class MVStoreBasicNonUniqueIndexTest extends MVStoreBasicTest {
         store.insert(Tuple.create(0, "val0"), txId).join();
         store.insert(Tuple.create(0, "val0"), txId2).join();
 
-        store.commit(txId, Timestamp.now());
-        store.commit(txId2, Timestamp.now());
+        store.commit(txId, clock.tick());
+        store.commit(txId2, clock.tick());
     }
 
     @Test
@@ -55,11 +55,11 @@ public abstract class MVStoreBasicNonUniqueIndexTest extends MVStoreBasicTest {
         CompletableFuture<VersionChain<Tuple>> fut = store.insert(Tuple.create(0, "val0"), txId2);
         assertFalse(fut.isDone());
 
-        store.commit(txId, Timestamp.now());
+        store.commit(txId, clock.tick());
 
         fut.join();
 
-        store.commit(txId2, Timestamp.now());
+        store.commit(txId2, clock.tick());
     }
 
     @Test
@@ -70,17 +70,17 @@ public abstract class MVStoreBasicNonUniqueIndexTest extends MVStoreBasicTest {
         UUID txId4 = new UUID(0, 4);
 
         VersionChain<Tuple> rowId = store.insert(Tuple.create(0, "val0"), txId).join();
-        store.commit(txId, Timestamp.now());
+        store.commit(txId, clock.tick());
 
         store.update(rowId, Tuple.create(1, "val1"), txId2).join();
-        store.commit(txId2, Timestamp.now());
+        store.commit(txId2, clock.tick());
 
         store.update(rowId, Tuple.create(0, "val2"), txId3).join();
-        store.commit(txId3, Timestamp.now());
+        store.commit(txId3, clock.tick());
 
         // TX3: id2 = insert [bill, 100], TX3
         store.insert(Tuple.create(0, "val3"), txId4).join();
-        store.commit(txId4, Timestamp.now());
+        store.commit(txId4, clock.tick());
     }
 
     @Test

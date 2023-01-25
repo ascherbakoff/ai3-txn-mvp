@@ -1,36 +1,48 @@
 package com.ascherbakoff.ai3.tracker;
 
-import java.util.List;
-import java.util.concurrent.ThreadLocalRandom;
+import com.ascherbakoff.ai3.clock.Timestamp;
+import com.ascherbakoff.ai3.tracker.Tracker.State;
+import java.util.HashMap;
+import java.util.Map;
+import org.jetbrains.annotations.Nullable;
 
 public class Group {
-    private List<NodeId> nodeIds;
+    private final String name;
+    private Map<NodeId, State> nodeState = new HashMap<>();
 
-    private final int id;
+    private Timestamp lease;
 
-    public Group(int id) {
-        this.id = id;
+    private @Nullable NodeId leaseHolder;
+
+    public Group(String name) {
+        this.name = name;
     }
 
-    public Integer id() {
-        return id;
+    public String getName() {
+        return name;
     }
 
-    public void addNodeId(NodeId nodeId) {
-        if (nodeIds.contains(nodeId))
-            throw new IllegalArgumentException("Node already registered " + nodeId);
-
-        nodeIds.add(nodeId);
+    public @Nullable Timestamp getLease() {
+        return lease;
     }
 
-    public void removeNodeId(NodeId nodeId) {
-        if (!nodeIds.contains(nodeId))
-            throw new IllegalArgumentException("Node not found " + nodeId);
-
-        nodeIds.remove(nodeId);
+    public void setLease(Timestamp lease) {
+        this.lease = lease;
     }
 
-    public List<NodeId> nodeIds() {
-        return nodeIds;
+    public NodeId getLeaseHolder() {
+        return leaseHolder;
+    }
+
+    public void setLeaseHolder(NodeId leaseHolder) {
+        this.leaseHolder = leaseHolder;
+    }
+
+    public Map<NodeId, State> getNodeState() {
+        return nodeState;
+    }
+
+    public void setState(NodeId nodeId, State state) {
+        nodeState.put(nodeId, state);
     }
 }

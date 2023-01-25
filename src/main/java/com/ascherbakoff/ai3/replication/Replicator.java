@@ -152,7 +152,7 @@ public class Replicator {
 
     public CompletableFuture<Response> idleSync() {
         Request r = new Request();
-        r.setTs(Timestamp.now()); // Propagate ts in idle sync.
+        r.setTs(node.clock().tick()); // Propagate ts in idle sync.
         r.setLwm(lwm);
         return client.send(nodeId, r).thenApply(response -> {
             node.update(response.getClock());
@@ -164,8 +164,8 @@ public class Replicator {
         return inflights.size();
     }
 
-    public static class Inflight {
-        private final Timestamp ts = Timestamp.now();
+    public class Inflight {
+        private final Timestamp ts = node.clock().tick();
         private final CompletableFuture<Response> fut = new CompletableFuture<>();
         private boolean acked;
         private Response done;

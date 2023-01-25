@@ -2,9 +2,12 @@ package com.ascherbakoff.ai3.util;
 
 import static org.junit.jupiter.api.Assertions.fail;
 
+import com.ascherbakoff.ai3.clock.Clock;
 import java.util.function.BooleanSupplier;
 
 public class BasicTest {
+    protected Clock clock = new Clock();
+
     protected boolean waitForCondition(BooleanSupplier cond, long timeout) {
         long ts = System.currentTimeMillis() + timeout;
         while(System.currentTimeMillis() < ts) {

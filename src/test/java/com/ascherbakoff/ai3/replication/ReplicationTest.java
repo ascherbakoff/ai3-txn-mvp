@@ -68,8 +68,8 @@ public class ReplicationTest extends BasicTest {
         Replicator aliceToBob = new Replicator(alice, bob.id(), t);
         aliceToBob.send(new Put(0, 0)).future().join();
 
-        Timestamp clock0 = alice.getClock();
-        Timestamp clock1 = bob.getClock();
+        Timestamp clock0 = alice.clock().now();
+        Timestamp clock1 = bob.clock().now();
 
         assertEquals(clock0, clock1);
     }

@@ -1,11 +1,12 @@
 package com.ascherbakoff.ai3.tracker;
 
-import com.ascherbakoff.ai3.clock.Timestamp;
+import java.util.ArrayList;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 
 public class TrackerTest {
     @Test
-    public void testCreate() {
+    public void testInitialAssign() {
         Topology t = new Topology();
 
         Node alice = new Node(new NodeId("alice"));
@@ -16,14 +17,14 @@ public class TrackerTest {
 
         Tracker tracker = new Tracker(t);
 
-        Group group = new Group(0);
-        group.addNodeId(alice.id());
-        group.addNodeId(bob.id());
+        List<NodeId> nodeIds = new ArrayList<>();
+        nodeIds.add(alice.id());
+        nodeIds.add(bob.id());
 
-        tracker.register(group);
+        String name = "repl0";
+        tracker.register(name, nodeIds);
 
-        Timestamp now = Timestamp.now();
-        tracker.assignLeaseholder(group.id(), now);
+        tracker.refreshLeaseholder(name);
     }
 
     @Test

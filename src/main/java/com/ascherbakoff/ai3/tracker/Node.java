@@ -1,5 +1,6 @@
 package com.ascherbakoff.ai3.tracker;
 
+import com.ascherbakoff.ai3.clock.Clock;
 import com.ascherbakoff.ai3.clock.Timestamp;
 import com.ascherbakoff.ai3.replication.Command;
 import com.ascherbakoff.ai3.replication.Put;
@@ -31,7 +32,7 @@ public class Node {
 
     private Timestamp lwm = Timestamp.min();
 
-    private Timestamp clock = Timestamp.min(); // Lamport clocks
+    private Clock clock = new Clock();
 
     private Executor executor = Executors.newSingleThreadExecutor();
 
@@ -73,11 +74,7 @@ public class Node {
 
         executor.execute(() -> {
             // Update logical clocks.
-            if (request.getTs().compareTo(clock) > 0) {
-                Node.this.clock = request.getTs();
-            } else {
-                Node.this.clock = Node.this.clock.adjust(1);
-            }
+            clock.onRequest(request.getTs());
 
             if (request.getLwm().compareTo(Node.this.lwm) > 0) {
                 Node.this.lwm = request.getLwm(); // Ignore stale sync requests - this is safe.
@@ -86,9 +83,9 @@ public class Node {
             if (request.getPayload() != null) {
                 request.getPayload().accept(Node.this, resp);
                 traceMap.put(request.getTs(), request.getPayload());
-                assert traceMap.headMap(Node.this.lwm, true).size() == Node.this.lwm.getCounter();
+                assert traceMap.headMap(Node.this.lwm, true).size() == Node.this.lwm.counter();
             } else {
-                resp.complete(new Response(Node.this.clock));
+                resp.complete(new Response(Node.this.clock.now()));
             }
 
         });
@@ -101,28 +98,29 @@ public class Node {
         table.insert(Tuple.create(put.getKey(), put.getValue()), id).thenAccept(new Consumer<Integer>() {
             @Override
             public void accept(Integer key) {
-                resp.complete(new Response(Node.this.clock)); // TODO send key.
+                resp.complete(new Response(Node.this.clock.now())); // TODO send key.
             }
         });
     }
 
-    public synchronized void refresh(Timestamp now, Node leaseholder, Map<NodeId, Tracker.State> nodeState) {
+    public synchronized void refresh(Timestamp now, NodeId leaseholder, Map<NodeId, Tracker.State> nodeState) {
         if (now.compareTo(this.trackerState.last) < 0) // Ignore stale updates.
             return;
 
         this.trackerState = new TrackerState(now, leaseholder, nodeState);
 
-        if (id().equals(leaseholder.nodeId)) {
-            LOGGER.log(Level.INFO, "I'm the leasholder for {0}-{1}, now={2}", this.trackerState.last, this.trackerState.last.adjust(Tracker.LEASE_DURATION), clock);
+        if (id().equals(leaseholder)) {
+            LOGGER.log(Level.INFO, "I am the leasholder: [interval={0}:{1}, now={2}]", this.trackerState.last, this.trackerState.last.adjust(Tracker.LEASE_DURATION), clock);
+        } else {
+            LOGGER.log(Level.INFO, "Refresh leasholder: [interval={0}:{1}, now={2}]", this.trackerState.last, this.trackerState.last.adjust(Tracker.LEASE_DURATION), clock);
         }
     }
 
-    public synchronized void update(Timestamp clock) {
-        if (clock.compareTo(this.clock) > 0)
-            this.clock = clock;
+    public synchronized void update(Timestamp ts) {
+        clock.onResponse(ts);
     }
 
-    public Timestamp getClock() {
+    public Clock clock() {
         return clock;
     }
 
@@ -133,11 +131,11 @@ public class Node {
     private static class TrackerState {
         final Timestamp last;
 
-        final Node leaseholder;
+        final NodeId leaseholder;
 
         final Map<NodeId, Tracker.State> nodeState;
 
-        TrackerState(Timestamp last, @Nullable Node leaseholder, Map<NodeId, Tracker.State> nodeState) {
+        TrackerState(Timestamp last, @Nullable NodeId leaseholder, Map<NodeId, Tracker.State> nodeState) {
             this.last = last;
             this.leaseholder = leaseholder;
             this.nodeState = nodeState;

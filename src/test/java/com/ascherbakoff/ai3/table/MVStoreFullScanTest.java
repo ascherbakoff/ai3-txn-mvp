@@ -5,18 +5,17 @@ import static java.util.concurrent.CompletableFuture.supplyAsync;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 
-import com.ascherbakoff.ai3.clock.Timestamp;
 import com.ascherbakoff.ai3.lock.DeadlockPrevention;
 import com.ascherbakoff.ai3.lock.LockTable;
+import com.ascherbakoff.ai3.util.BasicTest;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
-import org.junit.jupiter.api.Disabled;
 
-public class MVStoreFullScanTest {
+public class MVStoreFullScanTest extends BasicTest {
     MVStoreImpl store;
 
     {
@@ -43,7 +42,7 @@ public class MVStoreFullScanTest {
 
         assertFalse(supplyAsync(() -> fut1.isDone(), delayedExecutor(200, TimeUnit.MILLISECONDS)).join());
 
-        store.commit(txId2, Timestamp.now());
+        store.commit(txId2, clock.tick());
 
         List<VersionChain<Tuple>> rows = fut1.join();
 

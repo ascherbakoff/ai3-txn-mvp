@@ -1,31 +1,26 @@
 package com.ascherbakoff.ai3.clock;
 
-import java.util.concurrent.atomic.AtomicLong;
+import java.sql.Time;
 import org.jetbrains.annotations.NotNull;
 
 public class Timestamp implements Comparable<Timestamp> {
-    private static AtomicLong seq = new AtomicLong();
     private final long counter;
 
     Timestamp(long counter) {
         this.counter = counter;
     }
 
-    public long getCounter() {
+    public long counter() {
         return counter;
     }
 
     @Override
     public int compareTo(@NotNull Timestamp o) {
-        return Long.compare(counter, o.counter);
+        return Long.compare(counter(), o.counter());
     }
 
     public Timestamp adjust(long delta) {
-        return new Timestamp(counter + delta);
-    }
-
-    public static Timestamp now() {
-        return new Timestamp(seq.incrementAndGet());
+        return new Timestamp(counter() + delta);
     }
 
     public static Timestamp min() {
