@@ -2,15 +2,16 @@ package com.ascherbakoff.ai3.tracker;
 
 import com.ascherbakoff.ai3.clock.Clock;
 import com.ascherbakoff.ai3.clock.Timestamp;
-import com.ascherbakoff.ai3.replication.Command;
 import com.ascherbakoff.ai3.replication.Put;
 import com.ascherbakoff.ai3.replication.Request;
 import com.ascherbakoff.ai3.replication.Response;
 import com.ascherbakoff.ai3.table.KvTable;
 import com.ascherbakoff.ai3.table.Tuple;
+import com.ascherbakoff.ai3.tracker.Tracker.State;
 import java.lang.System.Logger.Level;
+import java.util.HashMap;
 import java.util.Map;
-import java.util.TreeMap;
+import java.util.Map.Entry;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
@@ -38,11 +39,11 @@ public class Node {
 
     private KvTable<Integer, String> table = new KvTable<>();
 
-    private TreeMap<Timestamp, Command> traceMap = new TreeMap<>();
-
     private AtomicInteger idGen = new AtomicInteger();
 
     private TrackerState trackerState = new TrackerState(Timestamp.min(), null, Map.of());
+
+    private Map<String, Group> groups = new HashMap<>();
 
     public void init() {
 
@@ -81,13 +82,10 @@ public class Node {
             }
 
             if (request.getPayload() != null) {
-                request.getPayload().accept(Node.this, resp);
-                traceMap.put(request.getTs(), request.getPayload());
-                assert traceMap.headMap(Node.this.lwm, true).size() == Node.this.lwm.counter();
+                request.getPayload().accept(Node.this, resp); // Process request async.
             } else {
                 resp.complete(new Response(Node.this.clock.now()));
             }
-
         });
 
         return resp;
@@ -103,21 +101,33 @@ public class Node {
         });
     }
 
-    public synchronized void refresh(Timestamp now, NodeId leaseholder, Map<NodeId, Tracker.State> nodeState) {
+    public CompletableFuture<Response> refresh(String grp, Timestamp now, NodeId leaseholder, Map<NodeId, Tracker.State> nodeState) {
         if (now.compareTo(this.trackerState.last) < 0) // Ignore stale updates.
-            return;
+            return CompletableFuture.completedFuture(new Response(clock.now()));;
 
-        this.trackerState = new TrackerState(now, leaseholder, nodeState);
+        Group group = this.groups.get(grp);
+        if (group == null) {
+            group = new Group(grp);
+            this.groups.put(grp, group);
+        }
+
+        group.setLeaseHolder(leaseholder);
+        group.setLease(now);
+        for (Entry<NodeId, Tracker.State> entry : nodeState.entrySet()) {
+            group.setState(entry.getKey(), entry.getValue());
+        }
 
         if (id().equals(leaseholder)) {
             LOGGER.log(Level.INFO, "I am the leasholder: [interval={0}:{1}, now={2}]", this.trackerState.last, this.trackerState.last.adjust(Tracker.LEASE_DURATION), clock);
         } else {
             LOGGER.log(Level.INFO, "Refresh leasholder: [interval={0}:{1}, now={2}]", this.trackerState.last, this.trackerState.last.adjust(Tracker.LEASE_DURATION), clock);
         }
+
+        return CompletableFuture.completedFuture(new Response(clock.now()));
     }
 
-    public synchronized void update(Timestamp ts) {
-        clock.onResponse(ts);
+    public Group group(String grp) {
+        return groups.get(grp);
     }
 
     public Clock clock() {

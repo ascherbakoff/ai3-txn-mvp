@@ -45,4 +45,40 @@ public class Group {
     public void setState(NodeId nodeId, State state) {
         nodeState.put(nodeId, state);
     }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) {
+            return true;
+        }
+        if (o == null || getClass() != o.getClass()) {
+            return false;
+        }
+
+        Group group = (Group) o;
+
+        if (!name.equals(group.name)) {
+            return false;
+        }
+        if (!nodeState.equals(group.nodeState)) {
+            return false;
+        }
+        if (lease != null ? !lease.equals(group.lease) : group.lease != null) {
+            return false;
+        }
+        if (leaseHolder != null ? !leaseHolder.equals(group.leaseHolder) : group.leaseHolder != null) {
+            return false;
+        }
+
+        return true;
+    }
+
+    @Override
+    public int hashCode() {
+        int result = name.hashCode();
+        result = 31 * result + nodeState.hashCode();
+        result = 31 * result + (lease != null ? lease.hashCode() : 0);
+        result = 31 * result + (leaseHolder != null ? leaseHolder.hashCode() : 0);
+        return result;
+    }
 }

@@ -7,29 +7,27 @@ public class Clock {
 
     private Timestamp now = Timestamp.min();
 
-    public Timestamp now() {
+    public synchronized Timestamp now() {
         return now;
     }
 
-    public Timestamp tick() {
+    public synchronized Timestamp tick() {
         now = new Timestamp(seq.incrementAndGet());
+        if (seq.get() > 100) {
+            System.out.println();
+        }
         return now;
     }
 
-    public void onRequest(Timestamp ts) {
+    public synchronized void onRequest(Timestamp ts) {
         if (ts.compareTo(now) > 0) {
             seq.set(ts.counter());
             now = new Timestamp(ts.counter());
-        } else {
-            now = new Timestamp(seq.incrementAndGet());
         }
     }
 
-    public void onResponse(Timestamp ts) {
-        if (ts.compareTo(now) > 0) {
-            seq.set(ts.counter());
-            now = new Timestamp(ts.counter());
-        }
+    public synchronized void onResponse(Timestamp ts) {
+        onRequest(ts);
     }
 
     @Override

@@ -1,6 +1,5 @@
 package com.ascherbakoff.ai3.clock;
 
-import java.sql.Time;
 import org.jetbrains.annotations.NotNull;
 
 public class Timestamp implements Comparable<Timestamp> {

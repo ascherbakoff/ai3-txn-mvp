@@ -144,6 +144,7 @@ public class ReplicationTest extends BasicTest {
 
         aliceToBob.idleSync().join();
 
+        assertEquals(3, aliceToBob.getLwm().counter());
         assertEquals(aliceToBob.getLwm(), bob.getLwm());
     }
 

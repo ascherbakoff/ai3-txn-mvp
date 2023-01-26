@@ -83,7 +83,7 @@ public class Replicator {
         client.send(nodeId, request).whenCompleteAsync(new BiConsumer<Response, Throwable>() {
             @Override
             public void accept(Response response, Throwable throwable) {
-                node.update(response.getClock());
+                node.clock().onResponse(response.getTs());
 
                 synchronized (Replicator.this) {
                     assert throwable == null : throwable; // TODO handle errors.
@@ -155,7 +155,7 @@ public class Replicator {
         r.setTs(node.clock().tick()); // Propagate ts in idle sync.
         r.setLwm(lwm);
         return client.send(nodeId, r).thenApply(response -> {
-            node.update(response.getClock());
+            node.clock().onResponse(response.getTs());
             return response;
         });
     }
