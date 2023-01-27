@@ -18,8 +18,8 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 
-public class ReplicationTest extends BasicTest {
-    private static System.Logger LOGGER = System.getLogger(ReplicationTest.class.getName());
+public class ReplicatorTest extends BasicTest {
+    private static System.Logger LOGGER = System.getLogger(ReplicatorTest.class.getName());
 
     @Test
     public void testJoin() {
@@ -114,7 +114,7 @@ public class ReplicationTest extends BasicTest {
         t.regiser(bob);
 
         Replicator aliceToBob = new Replicator(alice, bob.id(), t);
-        aliceToBob.block(r -> true);
+        aliceToBob.client().block(r -> true);
 
         Timestamp t0 = aliceToBob.getLwm();
 
@@ -124,15 +124,15 @@ public class ReplicationTest extends BasicTest {
 
         assertEquals(t0, bob.getLwm());
 
-        aliceToBob.stopBlock(r -> r.getTs().equals(i3.ts()));
+        aliceToBob.client().stopBlock(r -> r.getTs().equals(i3.ts()));
         waitForCondition(() -> i3.isAcked(), 1000);
         assertEquals(t0, bob.getLwm());
 
-        aliceToBob.stopBlock(r -> r.getTs().equals(i2.ts()));
+        aliceToBob.client().stopBlock(r -> r.getTs().equals(i2.ts()));
         waitForCondition(() -> i2.isAcked(), 1000);
         assertEquals(t0, bob.getLwm());
 
-        aliceToBob.stopBlock(r -> r.getTs().equals(i1.ts()));
+        aliceToBob.client().stopBlock(r -> r.getTs().equals(i1.ts()));
         waitForCondition(() -> i1.isAcked(), 1000);
         assertEquals(t0, bob.getLwm());
 
@@ -142,6 +142,7 @@ public class ReplicationTest extends BasicTest {
 
         assertEquals(0, aliceToBob.inflights());
 
+        aliceToBob.client().clearBlock();
         aliceToBob.idleSync().join();
 
         assertEquals(3, aliceToBob.getLwm().counter());
@@ -159,7 +160,7 @@ public class ReplicationTest extends BasicTest {
         t.regiser(bob);
 
         Replicator aliceToBob = new Replicator(alice, bob.id(), t);
-        aliceToBob.block(r -> true);
+        aliceToBob.client().block(r -> true);
 
         Timestamp t0 = aliceToBob.getLwm();
 
@@ -168,16 +169,16 @@ public class ReplicationTest extends BasicTest {
 
         assertEquals(t0, bob.getLwm());
 
-        aliceToBob.stopBlock(r -> r.getTs().equals(i1.ts()));
+        aliceToBob.client().stopBlock(r -> r.getTs().equals(i1.ts()));
         i1.future().join();
         assertEquals(t0, bob.getLwm());
 
         Inflight i3 = aliceToBob.send(new Put(2, 2));
-        aliceToBob.stopBlock(r -> r.getTs().equals(i3.ts()));
+        aliceToBob.client().stopBlock(r -> r.getTs().equals(i3.ts()));
         assertTrue(waitForCondition(() -> i3.isAcked(), 1000));
         assertEquals(i1.ts(), bob.getLwm());
 
-        aliceToBob.stopBlock(r -> r.getTs().equals(i2.ts()));
+        aliceToBob.client().stopBlock(r -> r.getTs().equals(i2.ts()));
         assertTrue(waitForCondition(() -> i2.isAcked(), 1000));
         assertEquals(i1.ts(), bob.getLwm());
 
@@ -187,6 +188,7 @@ public class ReplicationTest extends BasicTest {
 
         assertEquals(0, aliceToBob.inflights());
 
+        aliceToBob.client().clearBlock();
         aliceToBob.idleSync().join();
 
         assertEquals(aliceToBob.getLwm(), bob.getLwm());

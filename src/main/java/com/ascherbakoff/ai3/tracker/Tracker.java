@@ -2,7 +2,10 @@ package com.ascherbakoff.ai3.tracker;
 
 import com.ascherbakoff.ai3.clock.Clock;
 import com.ascherbakoff.ai3.clock.Timestamp;
+import com.ascherbakoff.ai3.replication.Lease;
+import com.ascherbakoff.ai3.replication.Request;
 import com.ascherbakoff.ai3.replication.Response;
+import com.ascherbakoff.ai3.replication.RpcClient;
 import java.lang.System.Logger.Level;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -25,9 +28,12 @@ public class Tracker {
 
     public Tracker(Topology topology) {
         this.topology = topology;
+        this.client = new RpcClient(topology);
     }
 
-    private Map<String, Group> groups = new HashMap<>();
+    private Map<String, Group> groups = new HashMap<>(); // Persistent state - survives restarts.
+
+    private RpcClient client;
 
     public synchronized void register(String name, List<NodeId> nodeIds) {
         if (groups.containsKey(name))
@@ -85,7 +91,6 @@ public class Tracker {
             }
         } else {
             candidate = group.getLeaseHolder();
-            // TODO can be offline
         }
 
         if (candidate == null) {
@@ -115,10 +120,13 @@ public class Tracker {
 
         Node cNode = topology.getNode(candidate);
         if (cNode == null)
-            return CompletableFuture.completedFuture(null); // Cant assign leaseholder on this iteration.
+            return CompletableFuture.completedFuture(null); // Can't assign leaseholder on this iteration.
 
         NodeId finalCandidate = candidate;
-        return cNode.refresh(name, from, candidate, nodeState).thenAccept(new Consumer<Response>() {
+        Request request = new Request();
+        request.setTs(from);
+        request.setPayload(new Lease(name, from, candidate, nodeState));
+        return client.send(cNode.id(), request).thenAccept(new Consumer<Response>() {
             @Override
             public void accept(Response response) {
                 group.setLeaseHolder(finalCandidate);

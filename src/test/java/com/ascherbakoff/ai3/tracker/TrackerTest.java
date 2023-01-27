@@ -50,7 +50,7 @@ public class TrackerTest {
     }
 
     @Test
-    public void testOutOfOrderMessagesIgnored() {
+    public void testTrackerRestartedBeforeAckReceived() {
 
     }
 }

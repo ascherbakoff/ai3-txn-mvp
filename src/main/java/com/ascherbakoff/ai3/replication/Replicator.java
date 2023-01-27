@@ -18,6 +18,7 @@ import org.jetbrains.annotations.Nullable;
 
 public class Replicator {
     private static System.Logger LOGGER = System.getLogger(Replicator.class.getName());
+
     private final Node node;
 
     private NodeId nodeId;
@@ -29,10 +30,6 @@ public class Replicator {
     private Timestamp lwm = Timestamp.min();
 
     private RpcClient client;
-
-    private @Nullable Predicate<Request> blockPred;
-
-    private List<Object[]> blockedMsgs = new ArrayList<>();
 
     public Replicator(Node node, NodeId nodeId, Topology topology) {
         this.node = node;
@@ -55,29 +52,6 @@ public class Replicator {
         request.setLwm(lwm);
         request.setPayload(payload);
 
-        synchronized (this) {
-            if (blockPred != null && blockPred.test(request)) {
-                Object[] msgData = {
-                        request,
-                        inflight.ts,
-                        System.currentTimeMillis(),
-                        (Runnable) () -> send(request, inflight)
-                };
-
-                blockedMsgs.add(msgData);
-
-                LOGGER.log(Level.DEBUG, "Blocked message to={0} id={1} msg={2}", nodeId.toString(), msgData[1], request);
-
-                return inflight;
-            }
-        }
-
-        send(request, inflight);
-
-        return inflight;
-    }
-
-    private void send(Request request, Inflight inflight) {
         LOGGER.log(Level.DEBUG, "Send id={0}, curLwm={1}", request.getTs(), lwm);
 
         client.send(nodeId, request).whenCompleteAsync(new BiConsumer<Response, Throwable>() {
@@ -112,42 +86,16 @@ public class Replicator {
                 }
             }
         });
+
+        return inflight;
+    }
+
+    public RpcClient client() {
+        return client;
     }
 
     public Timestamp getLwm() {
         return lwm;
-    }
-
-    public void stopBlock(Predicate<Request> pred) {
-        ArrayList<Object[]> msgs = new ArrayList<>();
-
-        synchronized (this) {
-            Iterator<Object[]> iterator = blockedMsgs.iterator();
-
-            while (iterator.hasNext()) {
-                Object[] msg = iterator.next();
-                Request r = (Request) msg[0];
-
-                if (pred.test(r)) {
-                    msgs.add(msg);
-                    iterator.remove();
-                }
-            }
-        }
-
-        for (Object[] msg : msgs) {
-            Runnable r = (Runnable) msg[3];
-
-            r.run();
-        }
-    }
-
-    public void clearBlock() {
-        blockPred = null;
-    }
-
-    public void block(Predicate<Request> pred) {
-        this.blockPred = pred;
     }
 
     public CompletableFuture<Response> idleSync() {

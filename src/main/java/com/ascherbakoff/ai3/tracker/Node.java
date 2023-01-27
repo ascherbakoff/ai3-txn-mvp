@@ -2,12 +2,12 @@ package com.ascherbakoff.ai3.tracker;
 
 import com.ascherbakoff.ai3.clock.Clock;
 import com.ascherbakoff.ai3.clock.Timestamp;
+import com.ascherbakoff.ai3.replication.Lease;
 import com.ascherbakoff.ai3.replication.Put;
 import com.ascherbakoff.ai3.replication.Request;
 import com.ascherbakoff.ai3.replication.Response;
 import com.ascherbakoff.ai3.table.KvTable;
 import com.ascherbakoff.ai3.table.Tuple;
-import com.ascherbakoff.ai3.tracker.Tracker.State;
 import java.lang.System.Logger.Level;
 import java.util.HashMap;
 import java.util.Map;
@@ -77,7 +77,7 @@ public class Node {
             // Update logical clocks.
             clock.onRequest(request.getTs());
 
-            if (request.getLwm().compareTo(Node.this.lwm) > 0) {
+            if (request.getLwm() != null && request.getLwm().compareTo(Node.this.lwm) > 0) {
                 Node.this.lwm = request.getLwm(); // Ignore stale sync requests - this is safe.
             }
 
@@ -101,9 +101,15 @@ public class Node {
         });
     }
 
-    public CompletableFuture<Response> refresh(String grp, Timestamp now, NodeId leaseholder, Map<NodeId, Tracker.State> nodeState) {
+    public void visit(Lease lease, CompletableFuture<Response> resp) {
+        refresh(lease.name(), lease.from(), lease.candidate(), lease.nodeState()).thenAccept(ignored -> {
+            resp.complete(new Response(Node.this.clock.now()));
+        });
+    }
+
+    public CompletableFuture<Void> refresh(String grp, Timestamp now, NodeId leaseholder, Map<NodeId, Tracker.State> nodeState) {
         if (now.compareTo(this.trackerState.last) < 0) // Ignore stale updates.
-            return CompletableFuture.completedFuture(new Response(clock.now()));;
+            return CompletableFuture.completedFuture(null);
 
         Group group = this.groups.get(grp);
         if (group == null) {
@@ -123,7 +129,7 @@ public class Node {
             LOGGER.log(Level.INFO, "Refresh leasholder: [interval={0}:{1}, now={2}]", this.trackerState.last, this.trackerState.last.adjust(Tracker.LEASE_DURATION), clock);
         }
 
-        return CompletableFuture.completedFuture(new Response(clock.now()));
+        return CompletableFuture.completedFuture(null);
     }
 
     public Group group(String grp) {
