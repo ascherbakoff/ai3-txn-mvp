@@ -100,6 +100,17 @@ public class Tracker {
 
         assert candidate != null;
 
+        return assignLeaseholder(name, candidate);
+    }
+
+    public CompletableFuture<Void> assignLeaseholder(String name, NodeId candidate) {
+        Group group = groups.get(name);
+
+        if (group == null)
+            throw new IllegalArgumentException("Group not found " + name);
+
+        assert candidate != null;
+
         Map<NodeId, State> nodeState = group.getNodeState();
 
         // Check expired lease.
@@ -107,14 +118,14 @@ public class Tracker {
             Timestamp expire = group.getLease().adjust(LEASE_DURATION).adjust(MAX_CLOCK_SKEW);
 
             if (clock.now().compareTo(expire) <= 0) {
-                LOGGER.log(Level.INFO, "Failed refresh a leaseholder for group, lease still active [grp={0}]", group.getName());
+                LOGGER.log(Level.INFO, "Failed refresh a leaseholder for group, lease still active [grp={0}, holder={1}]", group.getName(), group.getLeaseHolder());
                 return CompletableFuture.completedFuture(null);
             }
         }
 
         Timestamp from = clock.tick();
 
-        LOGGER.log(Level.INFO, "Refreshing a leaseholder: [group={0}, leaseholder={1}, start={2}]", group.getName(), candidate, from);
+        LOGGER.log(Level.INFO, "Assigning a leaseholder: [group={0}, leaseholder={1}, start={2}]", group.getName(), candidate, from);
 
         group.setLease(from);
 

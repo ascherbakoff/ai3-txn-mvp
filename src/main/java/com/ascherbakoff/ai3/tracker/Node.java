@@ -124,9 +124,9 @@ public class Node {
         }
 
         if (id().equals(leaseholder)) {
-            LOGGER.log(Level.INFO, "I am the leasholder: [interval={0}:{1}, now={2}]", this.trackerState.last, this.trackerState.last.adjust(Tracker.LEASE_DURATION), clock);
+            LOGGER.log(Level.INFO, "I am the leasholder: [interval={0}:{1}, now={2}, nodeId={3}]", this.trackerState.last, this.trackerState.last.adjust(Tracker.LEASE_DURATION), clock, nodeId);
         } else {
-            LOGGER.log(Level.INFO, "Refresh leasholder: [interval={0}:{1}, now={2}]", this.trackerState.last, this.trackerState.last.adjust(Tracker.LEASE_DURATION), clock);
+            LOGGER.log(Level.INFO, "Refresh leasholder: [interval={0}:{1}, now={2}], nodeId={3}", this.trackerState.last, this.trackerState.last.adjust(Tracker.LEASE_DURATION), clock, nodeId);
         }
 
         return CompletableFuture.completedFuture(null);
