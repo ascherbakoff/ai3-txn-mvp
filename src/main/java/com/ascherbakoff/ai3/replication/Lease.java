@@ -1,9 +1,9 @@
 package com.ascherbakoff.ai3.replication;
 
 import com.ascherbakoff.ai3.clock.Timestamp;
-import com.ascherbakoff.ai3.tracker.Node;
-import com.ascherbakoff.ai3.tracker.NodeId;
-import com.ascherbakoff.ai3.tracker.Tracker.State;
+import com.ascherbakoff.ai3.cluster.Node;
+import com.ascherbakoff.ai3.cluster.NodeId;
+import com.ascherbakoff.ai3.cluster.Tracker.State;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 

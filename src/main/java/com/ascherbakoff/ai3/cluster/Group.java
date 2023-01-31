@@ -1,7 +1,7 @@
-package com.ascherbakoff.ai3.tracker;
+package com.ascherbakoff.ai3.cluster;
 
 import com.ascherbakoff.ai3.clock.Timestamp;
-import com.ascherbakoff.ai3.tracker.Tracker.State;
+import com.ascherbakoff.ai3.cluster.Tracker.State;
 import java.util.HashMap;
 import java.util.Map;
 import org.jetbrains.annotations.Nullable;
@@ -80,5 +80,9 @@ public class Group {
         result = 31 * result + (lease != null ? lease.hashCode() : 0);
         result = 31 * result + (leaseHolder != null ? leaseHolder.hashCode() : 0);
         return result;
+    }
+
+    public boolean validLease(Timestamp at) {
+        return lease != null && lease.compareTo(at) <= 0 && at.compareTo(lease.adjust(Tracker.LEASE_DURATION)) < 0;
     }
 }

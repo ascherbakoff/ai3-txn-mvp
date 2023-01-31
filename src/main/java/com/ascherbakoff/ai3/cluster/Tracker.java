@@ -1,4 +1,4 @@
-package com.ascherbakoff.ai3.tracker;
+package com.ascherbakoff.ai3.cluster;
 
 import com.ascherbakoff.ai3.clock.Clock;
 import com.ascherbakoff.ai3.clock.Timestamp;
@@ -8,13 +8,15 @@ import com.ascherbakoff.ai3.replication.Response;
 import com.ascherbakoff.ai3.replication.RpcClient;
 import java.lang.System.Logger.Level;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Map.Entry;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.function.Consumer;
+import org.jetbrains.annotations.Nullable;
 
 public class Tracker {
     public static final int LEASE_DURATION = 20;
@@ -60,15 +62,17 @@ public class Tracker {
         return groups.get(name);
     }
 
-    public CompletableFuture<Void> refreshLeaseholder(String name) {
+    public boolean refreshLeaseholder(String name) {
         Group group = groups.get(name);
 
         if (group == null)
             throw new IllegalArgumentException("Group not found " + name);
 
-        NodeId candidate = null;
+        NodeId cur = group.getLeaseHolder();
 
-        if (group.getLeaseHolder() == null) {
+        NodeId candidate = getCurrentLeaseHolder(name);
+
+        if (candidate == null) { // Holder not elected or expired.
             List<NodeId> nodeIds = new ArrayList<>(group.getNodeState().keySet());
 
             while (!nodeIds.isEmpty()) {
@@ -90,12 +94,12 @@ public class Tracker {
                 break;
             }
         } else {
-            candidate = group.getLeaseHolder();
+            candidate = cur; // Try to re-elect previous holder.
         }
 
         if (candidate == null) {
-            LOGGER.log(Level.INFO, "Failed to choose a leaseholder for group, will try again later {0}", group.getName());
-            return CompletableFuture.completedFuture(null);
+            LOGGER.log(Level.INFO, "Failed to choose a leaseholder for group, will try again later {0}", name);
+            return false;
         }
 
         assert candidate != null;
@@ -103,7 +107,14 @@ public class Tracker {
         return assignLeaseholder(name, candidate);
     }
 
-    public CompletableFuture<Void> assignLeaseholder(String name, NodeId candidate) {
+    /**
+     * Assigns the proposed node to be a leaseholder for the next lease range.
+     *
+     * @param name The group name.
+     * @param candidate The candidate.
+     * @return Assignment future.
+     */
+    public boolean assignLeaseholder(String name, NodeId candidate) {
         Group group = groups.get(name);
 
         if (group == null)
@@ -111,49 +122,66 @@ public class Tracker {
 
         assert candidate != null;
 
-        Map<NodeId, State> nodeState = group.getNodeState();
+        // Check validity.
+        if (getCurrentLeaseHolder(name) != null) {
+            LOGGER.log(Level.INFO, "Failed refresh a leaseholder for group, lease still active [grp={0}, holder={1}]", group.getName(),
+                    group.getLeaseHolder());
+            return false;
+        }
 
-        // Check expired lease.
-        if (group.getLease() != null) {
-            Timestamp expire = group.getLease().adjust(LEASE_DURATION).adjust(MAX_CLOCK_SKEW);
+        Set<NodeId> nodeIds = Collections.unmodifiableSet(group.getNodeState().keySet());
 
-            if (clock.now().compareTo(expire) <= 0) {
-                LOGGER.log(Level.INFO, "Failed refresh a leaseholder for group, lease still active [grp={0}, holder={1}]", group.getName(), group.getLeaseHolder());
-                return CompletableFuture.completedFuture(null);
-            }
+        // Update group node states.
+        for (NodeId nodeId : nodeIds) {
+            if (topology.getNode(nodeId) == null)
+                group.setState(nodeId, State.OFFLINE);
+            else if (group.getNodeState().get(nodeId) == State.OFFLINE)
+                group.setState(nodeId, State.CATCHINGUP);
         }
 
         Timestamp from = clock.tick();
 
-        LOGGER.log(Level.INFO, "Assigning a leaseholder: [group={0}, leaseholder={1}, start={2}]", group.getName(), candidate, from);
+        if (group.getNodeState().get(candidate) == State.OFFLINE) // TODO refresh states
+            return false; // Can't assign leaseholder on this iteration.
 
+        LOGGER.log(Level.INFO, "Assigning a leaseholder: [group={0}, leaseholder={1}, at={2}]", group.getName(), candidate, from);
         group.setLease(from);
-
-        Node cNode = topology.getNode(candidate);
-        if (cNode == null)
-            return CompletableFuture.completedFuture(null); // Can't assign leaseholder on this iteration.
+        group.setLeaseHolder(candidate);
 
         NodeId finalCandidate = candidate;
         Request request = new Request();
         request.setTs(from);
-        request.setPayload(new Lease(name, from, candidate, nodeState));
-        return client.send(cNode.id(), request).thenAccept(new Consumer<Response>() {
+        request.setPayload(new Lease(name, from, candidate, group.getNodeState()));
+
+        client.send(candidate, request).thenAccept(new Consumer<Response>() {
             @Override
             public void accept(Response response) {
-                group.setLeaseHolder(finalCandidate);
-
-                for (Entry<NodeId, State> entry : nodeState.entrySet()) {
-                    if (entry.getKey().equals(finalCandidate))
+                for (NodeId nodeId : nodeIds) {
+                    if (nodeId.equals(finalCandidate))
                         continue;
 
-                    if (entry.getValue() == State.OFFLINE)
+                    if (group.getNodeState().get(nodeId) == State.OFFLINE)
                         continue;
 
-                    Node node = topology.getNode(entry.getKey());
-                    node.refresh(name, from, finalCandidate, nodeState);
+                    client.send(nodeId, request);
                 }
             }
         });
+
+        return true;
+    }
+
+    public @Nullable NodeId getCurrentLeaseHolder(String grpName) {
+        Group group = groups.get(grpName);
+        assert group != null;
+        Timestamp now = clock.now();
+
+        Timestamp lease = group.getLease();
+
+        if (lease != null && now.compareTo(lease.adjust(Tracker.LEASE_DURATION).adjust(MAX_CLOCK_SKEW)) < 0)
+            return group.getLeaseHolder();
+
+        return null;
     }
 
     public enum State {

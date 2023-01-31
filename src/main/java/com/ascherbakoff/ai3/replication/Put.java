@@ -1,6 +1,6 @@
 package com.ascherbakoff.ai3.replication;
 
-import com.ascherbakoff.ai3.tracker.Node;
+import com.ascherbakoff.ai3.cluster.Node;
 import java.util.concurrent.CompletableFuture;
 
 public class Put implements Command {

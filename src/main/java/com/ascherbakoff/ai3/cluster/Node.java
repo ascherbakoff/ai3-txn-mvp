@@ -1,4 +1,4 @@
-package com.ascherbakoff.ai3.tracker;
+package com.ascherbakoff.ai3.cluster;
 
 import com.ascherbakoff.ai3.clock.Clock;
 import com.ascherbakoff.ai3.clock.Timestamp;
@@ -123,11 +123,19 @@ public class Node {
             group.setState(entry.getKey(), entry.getValue());
         }
 
+        Timestamp at = clock.now();
+
         if (id().equals(leaseholder)) {
-            LOGGER.log(Level.INFO, "I am the leasholder: [interval={0}:{1}, now={2}, nodeId={3}]", this.trackerState.last, this.trackerState.last.adjust(Tracker.LEASE_DURATION), clock, nodeId);
+            LOGGER.log(Level.INFO, "I am the leasholder: [interval={0}:{1}, at={2}, nodeId={3}]", this.trackerState.last, this.trackerState.last.adjust(Tracker.LEASE_DURATION), at, nodeId);
         } else {
-            LOGGER.log(Level.INFO, "Refresh leasholder: [interval={0}:{1}, now={2}], nodeId={3}", this.trackerState.last, this.trackerState.last.adjust(Tracker.LEASE_DURATION), clock, nodeId);
+            LOGGER.log(Level.INFO, "Refresh leasholder: [interval={0}:{1}, at={2}], nodeId={3}", this.trackerState.last, this.trackerState.last.adjust(Tracker.LEASE_DURATION), at, nodeId);
         }
+
+        if (!group.validLease(at)) {
+            System.out.println();
+        }
+
+        assert group.validLease(at);
 
         return CompletableFuture.completedFuture(null);
     }
@@ -138,6 +146,21 @@ public class Node {
 
     public Clock clock() {
         return clock;
+    }
+
+    public @Nullable NodeId getLeaseHolder(String grpName) {
+        Group group = groups.get(grpName);
+        if (group == null)
+            return null;
+
+        Timestamp now = clock.now();
+
+        Timestamp lease = group.getLease();
+
+        if (lease != null && now.compareTo(lease.adjust(Tracker.LEASE_DURATION)) < 0)
+            return group.getLeaseHolder();
+
+        return null;
     }
 
     enum State {

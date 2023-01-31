@@ -1,20 +1,16 @@
 package com.ascherbakoff.ai3.replication;
 
 import com.ascherbakoff.ai3.clock.Timestamp;
-import com.ascherbakoff.ai3.tracker.Node;
-import com.ascherbakoff.ai3.tracker.NodeId;
-import com.ascherbakoff.ai3.tracker.Topology;
+import com.ascherbakoff.ai3.cluster.Node;
+import com.ascherbakoff.ai3.cluster.NodeId;
+import com.ascherbakoff.ai3.cluster.Topology;
 import java.lang.System.Logger.Level;
-import java.util.ArrayList;
 import java.util.Iterator;
-import java.util.List;
 import java.util.Map.Entry;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.BiConsumer;
-import java.util.function.Predicate;
-import org.jetbrains.annotations.Nullable;
 
 public class Replicator {
     private static System.Logger LOGGER = System.getLogger(Replicator.class.getName());

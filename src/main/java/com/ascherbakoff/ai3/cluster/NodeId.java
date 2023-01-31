@@ -1,6 +1,7 @@
-package com.ascherbakoff.ai3.tracker;
+package com.ascherbakoff.ai3.cluster;
 
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 public class NodeId {
     private final String id;
@@ -14,7 +15,7 @@ public class NodeId {
     }
 
     @Override
-    public boolean equals(Object o) {
+    public boolean equals(@Nullable Object o) {
         if (this == o) {
             return true;
         }

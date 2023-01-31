@@ -1,9 +1,8 @@
 package com.ascherbakoff.ai3.replication;
 
-import com.ascherbakoff.ai3.replication.Replicator.Inflight;
-import com.ascherbakoff.ai3.tracker.Node;
-import com.ascherbakoff.ai3.tracker.NodeId;
-import com.ascherbakoff.ai3.tracker.Topology;
+import com.ascherbakoff.ai3.cluster.Node;
+import com.ascherbakoff.ai3.cluster.NodeId;
+import com.ascherbakoff.ai3.cluster.Topology;
 import java.lang.System.Logger.Level;
 import java.util.ArrayList;
 import java.util.Iterator;

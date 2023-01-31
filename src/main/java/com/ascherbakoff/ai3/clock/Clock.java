@@ -13,9 +13,11 @@ public class Clock {
 
     public synchronized Timestamp tick() {
         now = new Timestamp(seq.incrementAndGet());
-        if (seq.get() > 100) {
-            System.out.println();
-        }
+        return now;
+    }
+
+    public synchronized Timestamp adjust(long delta) {
+        now = new Timestamp(seq.addAndGet(delta));
         return now;
     }
 
