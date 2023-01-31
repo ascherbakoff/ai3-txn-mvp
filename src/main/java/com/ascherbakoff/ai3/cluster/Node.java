@@ -4,6 +4,8 @@ import com.ascherbakoff.ai3.clock.Clock;
 import com.ascherbakoff.ai3.clock.Timestamp;
 import com.ascherbakoff.ai3.replication.Lease;
 import com.ascherbakoff.ai3.replication.Put;
+import com.ascherbakoff.ai3.replication.Replicator;
+import com.ascherbakoff.ai3.replication.Replicator.Inflight;
 import com.ascherbakoff.ai3.replication.Request;
 import com.ascherbakoff.ai3.replication.Response;
 import com.ascherbakoff.ai3.table.KvTable;
@@ -12,6 +14,7 @@ import java.lang.System.Logger.Level;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Map.Entry;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
@@ -24,10 +27,6 @@ public class Node {
     private static System.Logger LOGGER = System.getLogger(Node.class.getName());
 
     private final NodeId nodeId;
-
-    public Node(NodeId nodeId) {
-        this.nodeId = nodeId;
-    }
 
     private State state = State.STOPPED;
 
@@ -45,8 +44,12 @@ public class Node {
 
     private Map<String, Group> groups = new HashMap<>();
 
-    public void init() {
+    private final Topology top;
 
+
+    public Node(NodeId nodeId, Topology top) {
+        this.nodeId = nodeId;
+        this.top = top;
     }
 
     public void start() {
@@ -131,10 +134,6 @@ public class Node {
             LOGGER.log(Level.INFO, "Refresh leasholder: [interval={0}:{1}, at={2}], nodeId={3}", this.trackerState.last, this.trackerState.last.adjust(Tracker.LEASE_DURATION), at, nodeId);
         }
 
-        if (!group.validLease(at)) {
-            System.out.println();
-        }
-
         assert group.validLease(at);
 
         return CompletableFuture.completedFuture(null);
@@ -161,6 +160,40 @@ public class Node {
             return group.getLeaseHolder();
 
         return null;
+    }
+
+    public CompletableFuture<Void> replicate(String grp, Put put) {
+        Group group = groups.get(grp);
+        if (!group.validLease(clock.now()))
+            return CompletableFuture.failedFuture(new IllegalStateException("Not a leaseholder"));
+
+        Set<NodeId> nodeIds = group.getNodeState().keySet();
+
+        CompletableFuture<Void> res = new CompletableFuture<>();
+
+        AtomicInteger majority = new AtomicInteger(0);
+
+        for (NodeId id : nodeIds) {
+            Replicator replicator = group.replicators.get(id);
+            if (replicator == null) {
+                replicator = new Replicator(this, id, top); // TODO do we need to pass top ?
+                group.replicators.put(id, replicator);
+            }
+
+            Inflight inflight = replicator.send(put);
+
+            inflight.future().thenAccept(resp -> {
+                int val = majority.incrementAndGet();
+                if (val == nodeIds.size() / 2 + 1)
+                    res.complete(null);
+            });
+        }
+
+        return res;
+    }
+
+    public int get(int key) {
+        return 0;
     }
 
     enum State {

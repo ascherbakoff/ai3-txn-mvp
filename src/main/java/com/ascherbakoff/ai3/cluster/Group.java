@@ -2,6 +2,7 @@ package com.ascherbakoff.ai3.cluster;
 
 import com.ascherbakoff.ai3.clock.Timestamp;
 import com.ascherbakoff.ai3.cluster.Tracker.State;
+import com.ascherbakoff.ai3.replication.Replicator;
 import java.util.HashMap;
 import java.util.Map;
 import org.jetbrains.annotations.Nullable;
@@ -9,6 +10,8 @@ import org.jetbrains.annotations.Nullable;
 public class Group {
     private final String name;
     private Map<NodeId, State> nodeState = new HashMap<>();
+
+    Map<NodeId, Replicator> replicators = new HashMap<>();
 
     private Timestamp lease;
 

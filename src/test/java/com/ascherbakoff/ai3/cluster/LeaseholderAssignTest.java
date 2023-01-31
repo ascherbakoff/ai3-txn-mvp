@@ -20,14 +20,14 @@ public class LeaseholderAssignTest extends BasicTest {
     NodeId alice;
     NodeId bob;
 
-    private void createCluster() {
+    private void createCluster() { // TODO remove copy paste
         top = new Topology();
 
         alice = new NodeId("alice");
-        top.regiser(new Node(alice));
+        top.regiser(new Node(alice, top));
 
         bob = new NodeId("bob");
-        top.regiser(new Node(bob));
+        top.regiser(new Node(bob, top));
 
         tracker = new Tracker(top);
 

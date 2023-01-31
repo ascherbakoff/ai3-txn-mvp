@@ -25,8 +25,8 @@ public class ReplicatorTest extends BasicTest {
     public void testJoin() {
         Topology t = new Topology();
 
-        Node alice = new Node(new NodeId("alice"));
-        Node bob = new Node(new NodeId("bob"));
+        Node alice = new Node(new NodeId("alice"), t);
+        Node bob = new Node(new NodeId("bob"), t);
 
         t.regiser(alice);
         t.regiser(bob);
@@ -38,8 +38,8 @@ public class ReplicatorTest extends BasicTest {
     public void testSend() {
         Topology t = new Topology();
 
-        Node alice = new Node(new NodeId("alice"));
-        Node bob = new Node(new NodeId("bob"));
+        Node alice = new Node(new NodeId("alice"), t);
+        Node bob = new Node(new NodeId("bob"), t);
 
         t.regiser(alice);
         t.regiser(bob);
@@ -59,8 +59,8 @@ public class ReplicatorTest extends BasicTest {
     public void testClock() {
         Topology t = new Topology();
 
-        Node alice = new Node(new NodeId("alice"));
-        Node bob = new Node(new NodeId("bob"));
+        Node alice = new Node(new NodeId("alice"), t);
+        Node bob = new Node(new NodeId("bob"), t);
 
         t.regiser(alice);
         t.regiser(bob);
@@ -78,8 +78,8 @@ public class ReplicatorTest extends BasicTest {
     public void testLwmPropagation() {
         Topology t = new Topology();
 
-        Node alice = new Node(new NodeId("alice"));
-        Node bob = new Node(new NodeId("bob"));
+        Node alice = new Node(new NodeId("alice"), t);
+        Node bob = new Node(new NodeId("bob"), t);
 
         t.regiser(alice);
         t.regiser(bob);
@@ -107,8 +107,8 @@ public class ReplicatorTest extends BasicTest {
     public void testLwmPropagationOutOfOrder() throws InterruptedException {
         Topology t = new Topology();
 
-        Node alice = new Node(new NodeId("alice"));
-        Node bob = new Node(new NodeId("bob"));
+        Node alice = new Node(new NodeId("alice"), t);
+        Node bob = new Node(new NodeId("bob"), t);
 
         t.regiser(alice);
         t.regiser(bob);
@@ -153,8 +153,8 @@ public class ReplicatorTest extends BasicTest {
     public void testLwmPropagationOutOfOrder2() throws InterruptedException {
         Topology t = new Topology();
 
-        Node alice = new Node(new NodeId("alice"));
-        Node bob = new Node(new NodeId("bob"));
+        Node alice = new Node(new NodeId("alice"), t);
+        Node bob = new Node(new NodeId("bob"), t);
 
         t.regiser(alice);
         t.regiser(bob);
@@ -198,8 +198,8 @@ public class ReplicatorTest extends BasicTest {
     public void testSendConcurrent() throws InterruptedException {
         Topology t = new Topology();
 
-        Node alice = new Node(new NodeId("alice"));
-        Node bob = new Node(new NodeId("bob"));
+        Node alice = new Node(new NodeId("alice"), t);
+        Node bob = new Node(new NodeId("bob"), t);
 
         t.regiser(alice);
         t.regiser(bob);
