@@ -16,6 +16,7 @@ public class Replicator {
     private static System.Logger LOGGER = System.getLogger(Replicator.class.getName());
 
     private final Node node;
+    private final String grp;
 
     private NodeId nodeId;
 
@@ -27,14 +28,15 @@ public class Replicator {
 
     private RpcClient client;
 
-    public Replicator(Node node, NodeId nodeId, Topology topology) {
+    public Replicator(Node node, NodeId nodeId, String grp, Topology topology) {
         this.node = node;
+        this.grp = grp;
         this.nodeId = nodeId;
         this.topology = topology;
         this.client = new RpcClient(topology);
     }
 
-    public Inflight send(Command payload) {
+    public Inflight send(Request request) {
         Inflight inflight;
 
         synchronized (this) {
@@ -43,19 +45,20 @@ public class Replicator {
             assert inflight == inflights.lastEntry().getValue(); // Must insert in ts order.
         }
 
-        Request request = new Request();
         request.setTs(inflight.ts);
-        request.setLwm(lwm);
-        request.setPayload(payload);
 
         LOGGER.log(Level.DEBUG, "Send id={0}, curLwm={1}", request.getTs(), lwm);
 
         client.send(nodeId, request).whenCompleteAsync(new BiConsumer<Response, Throwable>() {
             @Override
             public void accept(Response response, Throwable throwable) {
+                LOGGER.log(Level.DEBUG, "Resp node=" + nodeId + " id=" + request.getId());
+
                 node.clock().onResponse(response.getTs());
 
                 synchronized (Replicator.this) {
+                    if (throwable != null)
+                        throwable.printStackTrace();
                     assert throwable == null : throwable; // TODO handle errors.
 
                     Set<Entry<Timestamp, Inflight>> set = inflights.entrySet();
@@ -79,6 +82,11 @@ public class Replicator {
                             break;
                         }
                     }
+
+                    // Adjust local LWM.
+                    if (nodeId.equals(node.id())) {
+                        node.group(grp).lwm = lwm;
+                    }
                 }
             }
         });
@@ -94,10 +102,7 @@ public class Replicator {
         return lwm;
     }
 
-    public CompletableFuture<Response> idleSync() {
-        Request r = new Request();
-        r.setTs(node.clock().tick()); // Propagate ts in idle sync.
-        r.setLwm(lwm);
+    public CompletableFuture<Response> idleSync(Request r) {
         return client.send(nodeId, r).thenApply(response -> {
             node.clock().onResponse(response.getTs());
             return response;

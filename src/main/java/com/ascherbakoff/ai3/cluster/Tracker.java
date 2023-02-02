@@ -19,7 +19,7 @@ import java.util.function.Consumer;
 import org.jetbrains.annotations.Nullable;
 
 public class Tracker {
-    public static final int LEASE_DURATION = 20;
+    public static final int LEASE_DURATION = 20000;
     public static final int MAX_CLOCK_SKEW = 5;
 
     private static System.Logger LOGGER = System.getLogger(Tracker.class.getName());
@@ -150,6 +150,7 @@ public class Tracker {
 
         NodeId finalCandidate = candidate;
         Request request = new Request();
+        request.setGrp(name);
         request.setTs(from);
         request.setPayload(new Lease(name, from, candidate, group.getNodeState()));
 

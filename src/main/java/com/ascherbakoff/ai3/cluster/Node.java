@@ -8,10 +8,10 @@ import com.ascherbakoff.ai3.replication.Replicator;
 import com.ascherbakoff.ai3.replication.Replicator.Inflight;
 import com.ascherbakoff.ai3.replication.Request;
 import com.ascherbakoff.ai3.replication.Response;
-import com.ascherbakoff.ai3.table.KvTable;
 import com.ascherbakoff.ai3.table.Tuple;
 import java.lang.System.Logger.Level;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Set;
@@ -30,22 +30,15 @@ public class Node {
 
     private State state = State.STOPPED;
 
-    private Timestamp lwm = Timestamp.min();
-
     private Clock clock = new Clock();
 
     private Executor executor = Executors.newSingleThreadExecutor();
-
-    private KvTable<Integer, String> table = new KvTable<>();
-
-    private AtomicInteger idGen = new AtomicInteger();
 
     private TrackerState trackerState = new TrackerState(Timestamp.min(), null, Map.of());
 
     private Map<String, Group> groups = new HashMap<>();
 
     private final Topology top;
-
 
     public Node(NodeId nodeId, Topology top) {
         this.nodeId = nodeId;
@@ -64,15 +57,6 @@ public class Node {
         return nodeId;
     }
 
-    /**
-     * Returns the safe timestamp.
-     *
-     * @return The timestamp.
-     */
-    public Timestamp getLwm() {
-        return lwm;
-    }
-
     public CompletableFuture<Response> accept(Request request) {
         CompletableFuture<Response> resp = new CompletableFuture<>();
 
@@ -80,31 +64,38 @@ public class Node {
             // Update logical clocks.
             clock.onRequest(request.getTs());
 
-            if (request.getLwm() != null && request.getLwm().compareTo(Node.this.lwm) > 0) {
-                Node.this.lwm = request.getLwm(); // Ignore stale sync requests - this is safe.
+            Group grp = groups.get(request.getGrp());
+
+            if (request.getLwm() != null && request.getLwm().compareTo(grp.lwm) > 0) {
+                grp.lwm = request.getLwm(); // Ignore stale sync requests - this is safe.
             }
 
             if (request.getPayload() != null) {
-                request.getPayload().accept(Node.this, resp); // Process request async.
+                request.getPayload().accept(Node.this, request, resp); // Process request async.
             } else {
                 resp.complete(new Response(Node.this.clock.now()));
             }
+
+            resp.complete(new Response(Node.this.clock.now()));
         });
 
         return resp;
     }
 
-    public void visit(Put put, CompletableFuture<Response> resp) {
-        UUID id = new UUID(0, idGen.getAndIncrement());
-        table.insert(Tuple.create(put.getKey(), put.getValue()), id).thenAccept(new Consumer<Integer>() {
+    public void visit(Put put, Request request, CompletableFuture<Response> resp) {
+        Group grp = groups.get(request.getGrp());
+        UUID txId = put.getTxId();
+        grp.table.insert(Tuple.create(put.getKey(), put.getValue()), txId).thenAccept(new Consumer<Integer>() {
             @Override
             public void accept(Integer key) {
                 resp.complete(new Response(Node.this.clock.now())); // TODO send key.
             }
         });
+        Timestamp commitTs = clock.tick();
+        grp.table.commit(txId, commitTs);
     }
 
-    public void visit(Lease lease, CompletableFuture<Response> resp) {
+    public void visit(Lease lease, Request request, CompletableFuture<Response> resp) {
         refresh(lease.name(), lease.from(), lease.candidate(), lease.nodeState()).thenAccept(ignored -> {
             resp.complete(new Response(Node.this.clock.now()));
         });
@@ -126,15 +117,15 @@ public class Node {
             group.setState(entry.getKey(), entry.getValue());
         }
 
-        Timestamp at = clock.now();
+        clock.onRequest(now); // Sync clocks to lease.
 
         if (id().equals(leaseholder)) {
-            LOGGER.log(Level.INFO, "I am the leasholder: [interval={0}:{1}, at={2}, nodeId={3}]", this.trackerState.last, this.trackerState.last.adjust(Tracker.LEASE_DURATION), at, nodeId);
+            LOGGER.log(Level.INFO, "I am the leasholder: [interval={0}:{1}, at={2}, nodeId={3}]", this.trackerState.last, this.trackerState.last.adjust(Tracker.LEASE_DURATION), clock.now(), nodeId);
         } else {
-            LOGGER.log(Level.INFO, "Refresh leasholder: [interval={0}:{1}, at={2}], nodeId={3}", this.trackerState.last, this.trackerState.last.adjust(Tracker.LEASE_DURATION), at, nodeId);
+            LOGGER.log(Level.INFO, "Refresh leasholder: [interval={0}:{1}, at={2}], nodeId={3}", this.trackerState.last, this.trackerState.last.adjust(Tracker.LEASE_DURATION), clock.now(), nodeId);
         }
 
-        assert group.validLease(at);
+        assert group.validLease(clock.now(), leaseholder);
 
         return CompletableFuture.completedFuture(null);
     }
@@ -162,38 +153,136 @@ public class Node {
         return null;
     }
 
-    public CompletableFuture<Void> replicate(String grp, Put put) {
+    public Result replicate(String grp, Put put) {
         Group group = groups.get(grp);
-        if (!group.validLease(clock.now()))
-            return CompletableFuture.failedFuture(new IllegalStateException("Not a leaseholder"));
+
+        if (!group.validLease(clock.now(), nodeId)) {
+            Result res = new Result();
+            res.setFuture(CompletableFuture.failedFuture(new IllegalStateException("Illegal lease")));
+            return res;
+        }
 
         Set<NodeId> nodeIds = group.getNodeState().keySet();
 
-        CompletableFuture<Void> res = new CompletableFuture<>();
+        CompletableFuture<Void> resFut = new CompletableFuture<>();
+
+        Result res = new Result();
+        res.setFuture(resFut);
 
         AtomicInteger majority = new AtomicInteger(0);
+
+        UUID idd = UUID.randomUUID();
 
         for (NodeId id : nodeIds) {
             Replicator replicator = group.replicators.get(id);
             if (replicator == null) {
-                replicator = new Replicator(this, id, top); // TODO do we need to pass top ?
+                replicator = new Replicator(this, id, grp, top); // TODO do we need to pass top ?
                 group.replicators.put(id, replicator);
             }
 
-            Inflight inflight = replicator.send(put);
+            Request request = new Request(); // Creating the request copy is essential.
+            request.setId(idd);
+            request.setGrp(grp);
+            request.setPayload(put);
+            request.setLwm(replicator.getLwm());
+
+            Inflight inflight = replicator.send(request);
+
+            res.getPending().put(id, inflight);
 
             inflight.future().thenAccept(resp -> {
                 int val = majority.incrementAndGet();
-                if (val == nodeIds.size() / 2 + 1)
-                    res.complete(null);
+                if (val == nodeIds.size() / 2 + 1) {
+                    LOGGER.log(Level.DEBUG, "All ack " + inflight.ts() + " req=" + idd+ " node=" + id);
+                    resFut.complete(null);
+                } else {
+                    LOGGER.log(Level.DEBUG, "Ack " + inflight.ts()+ " req=" + idd + " node=" + id);
+                }
             });
         }
 
         return res;
     }
 
-    public int get(int key) {
-        return 0;
+    public void createReplicator(String grp, NodeId id) {
+        Group group = groups.get(grp);
+
+        Replicator replicator = group.replicators.get(id);
+        if (replicator == null) {
+            replicator = new Replicator(this, id, grp, top); // TODO do we need to pass top ?
+            group.replicators.put(id, replicator);
+        }
+    }
+
+    public static class Result {
+        CompletableFuture<Void> res = new CompletableFuture<>();
+
+        Map<NodeId, Inflight> pending = new HashMap<>();
+
+        public CompletableFuture<Void> future() {
+            return res;
+        }
+
+        public void setFuture(CompletableFuture<Void> res) {
+            this.res = res;
+        }
+
+        public Map<NodeId, Inflight> getPending() {
+            return pending;
+        }
+
+        public void setPending(Map<NodeId, Inflight> pending) {
+            this.pending = pending;
+        }
+    }
+
+    public CompletableFuture<Integer> localGet(String grp, int key, UUID txId) {
+        Group group = groups.get(grp);
+
+        if (!group.validLease(clock.now(), nodeId)) {
+            return CompletableFuture.failedFuture(new IllegalStateException("Illegal lease"));
+        }
+
+        return group.table.get(key, txId).thenApply(val -> {
+            group.table.commit(txId, clock.tick());
+            return val;
+        });
+    }
+
+    public CompletableFuture<Void> sync(String grp) {
+        Group group = groups.get(grp);
+
+        if (!group.validLease(clock.now(), nodeId)) {
+            return CompletableFuture.failedFuture(new IllegalStateException("Illegal lease"));
+        }
+
+        Set<NodeId> nodeIds = new HashSet<>(group.getNodeState().keySet());
+        nodeIds.remove(nodeId);
+
+        CompletableFuture<Void> res = new CompletableFuture<>();
+
+        AtomicInteger majority = new AtomicInteger(0);
+
+        Request r = new Request();
+        r.setGrp(grp);
+        r.setTs(clock().tick()); // Propagate ts in idle sync.
+        r.setLwm(group.lwm);
+
+        for (NodeId id : nodeIds) {
+            Replicator replicator = group.replicators.get(id);
+            if (replicator == null) {
+                replicator = new Replicator(this, id, grp, top);
+                group.replicators.put(id, replicator);
+            }
+
+            replicator.idleSync(r).thenAccept(resp -> {
+                int val = majority.incrementAndGet();
+                if (val == nodeIds.size())
+                    res.complete(null);
+            });
+        }
+
+        return res;
     }
 
     enum State {

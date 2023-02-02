@@ -21,8 +21,8 @@ public class Lease implements Command {
     }
 
     @Override
-    public void accept(Node node, CompletableFuture<Response> resp) {
-        node.visit(this, resp);
+    public void accept(Node node, Request request, CompletableFuture<Response> resp) {
+        node.visit(this, request, resp);
     }
 
     /**

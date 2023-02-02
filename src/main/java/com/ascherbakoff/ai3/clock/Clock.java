@@ -12,8 +12,7 @@ public class Clock {
     }
 
     public synchronized Timestamp tick() {
-        now = new Timestamp(seq.incrementAndGet());
-        return now;
+        return adjust(1);
     }
 
     public synchronized Timestamp adjust(long delta) {

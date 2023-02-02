@@ -3,15 +3,19 @@ package com.ascherbakoff.ai3.cluster;
 import com.ascherbakoff.ai3.clock.Timestamp;
 import com.ascherbakoff.ai3.cluster.Tracker.State;
 import com.ascherbakoff.ai3.replication.Replicator;
+import com.ascherbakoff.ai3.table.KvTable;
 import java.util.HashMap;
 import java.util.Map;
 import org.jetbrains.annotations.Nullable;
 
 public class Group {
     private final String name;
+    public Timestamp lwm = Timestamp.min();
     private Map<NodeId, State> nodeState = new HashMap<>();
 
     Map<NodeId, Replicator> replicators = new HashMap<>();
+
+    KvTable<Integer, Integer> table = new KvTable<>();
 
     private Timestamp lease;
 
@@ -85,7 +89,15 @@ public class Group {
         return result;
     }
 
-    public boolean validLease(Timestamp at) {
-        return lease != null && lease.compareTo(at) <= 0 && at.compareTo(lease.adjust(Tracker.LEASE_DURATION)) < 0;
+    public boolean validLease(Timestamp at, @Nullable NodeId leaseHolder) {
+        boolean validTs = lease != null && lease.compareTo(at) <= 0 && at.compareTo(lease.adjust(Tracker.LEASE_DURATION)) < 0;
+
+        if (!validTs)
+            return false;
+
+        if (leaseHolder != null && !leaseHolder.equals(this.leaseHolder))
+            return false;
+
+        return true;
     }
 }

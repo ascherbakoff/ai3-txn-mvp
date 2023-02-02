@@ -1,14 +1,13 @@
 package com.ascherbakoff.ai3.table;
 
+import com.ascherbakoff.ai3.clock.Timestamp;
 import com.ascherbakoff.ai3.lock.DeadlockPrevention;
 import com.ascherbakoff.ai3.lock.LockTable;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CompletionStage;
 import java.util.function.Function;
-import org.jetbrains.annotations.Nullable;
 
 public class KvTable<K extends Comparable<K>, V extends Comparable<V>> {
     MVStore store;
@@ -73,5 +72,9 @@ public class KvTable<K extends Comparable<K>, V extends Comparable<V>> {
 
             return store.remove(chain, txId);
         });
+    }
+
+    public void commit(UUID id, Timestamp ts) {
+        store.commit(id, ts);
     }
 }
