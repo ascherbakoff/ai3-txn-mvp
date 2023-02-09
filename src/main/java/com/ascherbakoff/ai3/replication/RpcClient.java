@@ -42,7 +42,7 @@ public class RpcClient {
 
                 blockedMsgs.add(msgData);
 
-                LOGGER.log(Level.DEBUG, "Blocked message to={0} id={1} msg={2}", nodeId.toString(), msgData[1], request);
+                LOGGER.log(Level.INFO, "Blocked message to={0} id={1} msg={2}", nodeId.toString(), msgData[1].toString(), request);
 
                 return fut;
             }

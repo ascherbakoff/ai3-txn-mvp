@@ -1,11 +1,13 @@
 package com.ascherbakoff.ai3.cluster;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.ascherbakoff.ai3.clock.Timestamp;
 import com.ascherbakoff.ai3.util.BasicTest;
-import java.lang.System.Logger.Level;
 import java.util.ArrayList;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -44,17 +46,17 @@ public class LeaseholderAssignTest extends BasicTest {
 
         tracker.assignLeaseholder(GRP_NAME, alice);
 
-        assertEquals(alice, tracker.getCurrentLeaseHolder(GRP_NAME));
+        assertEquals(alice, tracker.getLeaseHolder(GRP_NAME));
         for (Node node : top.getNodeMap().values()) {
-            assertTrue(waitForCondition(() -> alice.equals(node.getLeaseHolder(GRP_NAME)), 1000));
+            assertTrue(waitForCondition(() -> alice.equals(node.getLeaseHolder(GRP_NAME)), 1_000));
         }
 
-        tracker.assignLeaseholder(GRP_NAME, bob);
+        assertFalse(tracker.assignLeaseholder(GRP_NAME, bob));
 
         // Leaseholders shoudn't change.
-        assertEquals(alice, tracker.getCurrentLeaseHolder(GRP_NAME));
+        assertEquals(alice, tracker.getLeaseHolder(GRP_NAME));
         for (Node node : top.getNodeMap().values()) {
-            assertTrue(waitForCondition(() -> alice.equals(node.getLeaseHolder(GRP_NAME)), 1000));
+            assertTrue(waitForCondition(() -> alice.equals(node.getLeaseHolder(GRP_NAME)), 1_000));
         }
     }
 
@@ -64,23 +66,53 @@ public class LeaseholderAssignTest extends BasicTest {
 
         tracker.assignLeaseholder(GRP_NAME, alice);
 
-        assertEquals(alice, tracker.getCurrentLeaseHolder(GRP_NAME));
+        assertEquals(alice, tracker.getLeaseHolder(GRP_NAME));
         for (Node node : top.getNodeMap().values()) {
-            assertTrue(waitForCondition(() -> alice.equals(node.getLeaseHolder(GRP_NAME)), 1000));
+            assertTrue(waitForCondition(() -> alice.equals(node.getLeaseHolder(GRP_NAME)), 1_000));
         }
 
         adjustClocks(Tracker.LEASE_DURATION);
 
-        assertEquals(alice, tracker.getCurrentLeaseHolder(GRP_NAME));
+        assertEquals(alice, tracker.getLeaseHolder(GRP_NAME));
         for (Node node : top.getNodeMap().values()) {
             assertNull(node.getLeaseHolder(GRP_NAME));
         }
 
         adjustClocks(Tracker.MAX_CLOCK_SKEW);
 
-        assertNull(tracker.getCurrentLeaseHolder(GRP_NAME));
+        // Tracker lease expires latest.
+        assertNull(tracker.getLeaseHolder(GRP_NAME));
         for (Node node : top.getNodeMap().values()) {
             assertNull(node.getLeaseHolder(GRP_NAME));
+        }
+    }
+
+    @Test
+    public void testRefresh() {
+        createCluster();
+
+        tracker.assignLeaseholder(GRP_NAME, alice);
+
+        assertEquals(alice, tracker.getLeaseHolder(GRP_NAME));
+        for (Node node : top.getNodeMap().values()) {
+            assertTrue(waitForCondition(() -> alice.equals(node.getLeaseHolder(GRP_NAME)), 1_000));
+        }
+
+        adjustClocks(Tracker.LEASE_DURATION / 2);
+
+        Timestamp low = clock.get();
+
+        assertFalse(tracker.assignLeaseholder(GRP_NAME, bob));
+        assertTrue(tracker.assignLeaseholder(GRP_NAME, alice));
+
+        assertEquals(alice, tracker.getLeaseHolder(GRP_NAME));
+        Timestamp trackerLease = tracker.getLease(GRP_NAME);
+        assertNotNull(trackerLease);
+        assertTrue(trackerLease.compareTo(low) >= 0);
+
+        for (Node node : top.getNodeMap().values()) {
+            assertEquals(alice, node.getLeaseHolder(GRP_NAME));
+            assertTrue(waitForCondition(() -> trackerLease.equals(node.getLease(GRP_NAME)), 1_000));
         }
     }
 
@@ -90,21 +122,21 @@ public class LeaseholderAssignTest extends BasicTest {
 
         tracker.assignLeaseholder(GRP_NAME, alice);
 
-        assertEquals(alice, tracker.getCurrentLeaseHolder(GRP_NAME));
+        assertEquals(alice, tracker.getLeaseHolder(GRP_NAME));
 
         for (Node node : top.getNodeMap().values()) {
-            assertTrue(waitForCondition(() -> alice.equals(node.getLeaseHolder(GRP_NAME)), 1000));
+            assertTrue(waitForCondition(() -> alice.equals(node.getLeaseHolder(GRP_NAME)), 1_000));
         }
 
         adjustClocks(Tracker.LEASE_DURATION + Tracker.MAX_CLOCK_SKEW);
 
         tracker.assignLeaseholder(GRP_NAME, bob);
 
-        // Leaseholders shoudn't change.
-        assertEquals(bob, tracker.getCurrentLeaseHolder(GRP_NAME));
+        // Leaseholders should change. // TODO waitleaseholder
+        assertEquals(bob, tracker.getLeaseHolder(GRP_NAME));
 
         for (Node node : top.getNodeMap().values()) {
-            assertTrue(waitForCondition(() -> bob.equals(node.getLeaseHolder(GRP_NAME)), 1000));
+            assertTrue(waitForCondition(() -> bob.equals(node.getLeaseHolder(GRP_NAME)), 1_000));
         }
     }
 

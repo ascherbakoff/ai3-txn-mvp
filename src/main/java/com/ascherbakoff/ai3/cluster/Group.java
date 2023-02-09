@@ -91,13 +91,13 @@ public class Group {
         return result;
     }
 
-    public boolean validLease(Timestamp at, @Nullable NodeId leaseHolder) {
+    public boolean validLease(Timestamp at, NodeId leaseHolder) {
         boolean validTs = lease != null && lease.compareTo(at) <= 0 && at.compareTo(lease.adjust(Tracker.LEASE_DURATION)) < 0;
 
         if (!validTs)
             return false;
 
-        if (leaseHolder != null && !leaseHolder.equals(this.leaseHolder))
+        if (!leaseHolder.equals(this.leaseHolder))
             return false;
 
         return true;

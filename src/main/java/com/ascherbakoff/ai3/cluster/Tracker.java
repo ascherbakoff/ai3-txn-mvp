@@ -70,7 +70,7 @@ public class Tracker {
 
         NodeId cur = group.getLeaseHolder();
 
-        NodeId candidate = getCurrentLeaseHolder(name);
+        NodeId candidate = getLeaseHolder(name);
 
         if (candidate == null) { // Holder not elected or expired.
             List<NodeId> nodeIds = new ArrayList<>(group.getNodeState().keySet());
@@ -108,7 +108,7 @@ public class Tracker {
     }
 
     /**
-     * Assigns the proposed node to be a leaseholder for the next lease range.
+     * Assigns (or refreshes) the proposed node to be a leaseholder for the next (or current) lease range.
      *
      * @param name The group name.
      * @param candidate The candidate.
@@ -123,13 +123,16 @@ public class Tracker {
         assert candidate != null;
 
         // Check validity.
-        if (getCurrentLeaseHolder(name) != null) {
-            LOGGER.log(Level.INFO, "Failed refresh a leaseholder for group, lease still active [grp={0}, holder={1}]", group.getName(),
-                    group.getLeaseHolder());
+        NodeId leaseHolder = getLeaseHolder(name);
+        if (leaseHolder != null && !leaseHolder.equals(candidate)) {
+            LOGGER.log(Level.INFO, "Failed to refresh a leaseholder for group, lease still active [grp={0}, holder={1}, candidate={2}]",
+                    group.getName(),
+                    group.getLeaseHolder(),
+                    candidate);
             return false;
         }
 
-        Set<NodeId> nodeIds = Collections.unmodifiableSet(group.getNodeState().keySet());
+        Set<NodeId> nodeIds = Collections.unmodifiableSet(topology.getNodeMap().keySet());
 
         // Update group node states.
         for (NodeId nodeId : nodeIds) {
@@ -144,7 +147,7 @@ public class Tracker {
         if (group.getNodeState().get(candidate) == State.OFFLINE) // TODO refresh states
             return false; // Can't assign leaseholder on this iteration.
 
-        LOGGER.log(Level.INFO, "Assigning a leaseholder: [group={0}, leaseholder={1}, at={2}]", group.getName(), candidate, from);
+        LOGGER.log(Level.INFO, "Assigning(refreshing) a leaseholder: [group={0}, leaseholder={1}, at={2}]", group.getName(), candidate, from);
         group.setLease(from);
         group.setLeaseHolder(candidate);
 
@@ -154,6 +157,7 @@ public class Tracker {
         request.setTs(from);
         request.setPayload(new Lease(name, from, candidate, group.getNodeState()));
 
+        // Send to all alive nodes.
         client.send(candidate, request).thenAccept(new Consumer<Response>() {
             @Override
             public void accept(Response response) {
@@ -172,15 +176,30 @@ public class Tracker {
         return true;
     }
 
-    public @Nullable NodeId getCurrentLeaseHolder(String grpName) {
+    public @Nullable NodeId getLeaseHolder(String grpName) {
         Group group = groups.get(grpName);
-        assert group != null;
+        if (group == null)
+            return null;
         Timestamp now = clock.now();
 
         Timestamp lease = group.getLease();
 
         if (lease != null && now.compareTo(lease.adjust(Tracker.LEASE_DURATION).adjust(MAX_CLOCK_SKEW)) < 0)
             return group.getLeaseHolder();
+
+        return null;
+    }
+
+    public @Nullable Timestamp getLease(String grpName) {
+        Group group = groups.get(grpName);
+        if (group == null)
+            return null;
+        Timestamp now = clock.now();
+
+        Timestamp lease = group.getLease();
+
+        if (lease != null && now.compareTo(lease.adjust(Tracker.LEASE_DURATION).adjust(MAX_CLOCK_SKEW)) < 0)
+            return group.getLease();
 
         return null;
     }

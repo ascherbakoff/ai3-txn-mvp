@@ -1,5 +1,7 @@
 package com.ascherbakoff.ai3.clock;
 
+import org.jetbrains.annotations.Nullable;
+
 public class Timestamp implements Comparable<Timestamp> {
     private final long physical;
 
@@ -28,7 +30,7 @@ public class Timestamp implements Comparable<Timestamp> {
     }
 
     @Override
-    public boolean equals(Object o) {
+    public boolean equals(@Nullable Object o) {
         if (this == o) {
             return true;
         }

@@ -4,11 +4,12 @@ import com.ascherbakoff.ai3.clock.Clock;
 import com.ascherbakoff.ai3.clock.Timestamp;
 import com.ascherbakoff.ai3.replication.Lease;
 import com.ascherbakoff.ai3.replication.Put;
+import com.ascherbakoff.ai3.replication.Replicate;
 import com.ascherbakoff.ai3.replication.Replicator;
 import com.ascherbakoff.ai3.replication.Replicator.Inflight;
 import com.ascherbakoff.ai3.replication.Request;
 import com.ascherbakoff.ai3.replication.Response;
-import com.ascherbakoff.ai3.table.Tuple;
+import com.ascherbakoff.ai3.replication.Sync;
 import java.lang.System.Logger.Level;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -20,7 +21,6 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.function.Consumer;
 import org.jetbrains.annotations.Nullable;
 
 public class Node {
@@ -63,30 +63,45 @@ public class Node {
             // Update logical clocks.
             clock.onRequest(request.getTs());
 
-            Group grp = groups.get(request.getGrp());
-
-            if (request.getLwm() != null && request.getLwm().compareTo(grp.lwm) > 0) {
-                grp.lwm = request.getLwm(); // Ignore stale sync requests - this is safe.
-            }
-
-            if (request.getPayload() != null) {
-                request.getPayload().accept(Node.this, request, resp); // Process request async.
-            } else {
-                resp.complete(new Response(Node.this.clock.now()));
-            }
-
-            resp.complete(new Response(Node.this.clock.now()));
+            request.getPayload().accept(Node.this, request, resp); // Process request async.
         });
 
         return resp;
     }
 
-    public void visit(Put put, Request request, CompletableFuture<Response> resp) {
+    public void visit(Replicate replicate, Request request, CompletableFuture<Response> resp) {
         Group grp = groups.get(request.getGrp());
-        UUID txId = put.getTxId();
-        Timestamp commitTs = clock.now();
-        grp.table.put(put.getKey(), put.getValue(), commitTs);
-        resp.complete(new Response(commitTs));
+
+        Timestamp now = clock.now();
+        if (grp == null) {
+            resp.complete(new Response(now, -1));
+            return;
+        }
+
+        // This is an optimization.
+        if (!grp.validLease(now, request.getSender())) {
+            resp.complete(new Response(now, -1));
+            return;
+        }
+
+        if (!grp.validLease(request.getTs(), request.getSender())) {
+            resp.complete(new Response(now, -1));
+            return;
+        }
+
+        if (replicate.getLwm().compareTo(grp.lwm) > 0) {
+            grp.lwm = replicate.getLwm(); // Ignore stale sync requests - this is safe.
+        }
+
+        Object data = replicate.getData();
+        if (data instanceof Put) {
+            Put put = (Put) data;
+            Timestamp commitTs = now;
+            grp.table.put(put.getKey(), put.getValue(), commitTs);
+            resp.complete(new Response(commitTs));
+        } else {
+            resp.complete(new Response(now, -1));
+        }
     }
 
     public void visit(Lease lease, Request request, CompletableFuture<Response> resp) {
@@ -94,6 +109,17 @@ public class Node {
         refresh(now, lease.name(), lease.from(), lease.candidate(), lease.nodeState());
         resp.complete(new Response(now));
     }
+
+    public void visit(Sync sync, Request request, CompletableFuture<Response> resp) {
+        Group grp = groups.get(request.getGrp());
+
+        if (sync.getLwm().compareTo(grp.lwm) > 0) {
+            grp.lwm = sync.getLwm(); // Ignore stale sync requests - this is safe.
+        }
+
+        resp.complete(new Response(Node.this.clock.now()));
+    }
+
 
     public boolean refresh(Timestamp now, String grp, Timestamp leaseStart, NodeId leaseholder, Map<NodeId, Tracker.State> nodeState) {
         Group group = this.groups.get(grp);
@@ -152,6 +178,23 @@ public class Node {
         return null;
     }
 
+    // TODO copypaste
+    public @Nullable Timestamp getLease(String grpName) {
+        Group group = groups.get(grpName);
+        if (group == null)
+            return null;
+
+        Timestamp now = clock.now();
+
+        Timestamp lease = group.getLease();
+
+        if (lease != null && now.compareTo(lease.adjust(Tracker.LEASE_DURATION)) < 0)
+            return group.getLease();
+
+        return null;
+    }
+
+
     public Result replicate(String grp, Put put) {
         Group group = groups.get(grp);
 
@@ -169,6 +212,7 @@ public class Node {
         res.setFuture(resFut);
 
         AtomicInteger majority = new AtomicInteger(0);
+        AtomicInteger err = new AtomicInteger(0);
 
         UUID idd = UUID.randomUUID();
 
@@ -181,9 +225,9 @@ public class Node {
 
             Request request = new Request(); // Creating the request copy is essential.
             request.setId(idd);
+            request.setSender(nodeId);
             request.setGrp(grp);
-            request.setPayload(put);
-            request.setLwm(replicator.getLwm());
+            request.setPayload(new Replicate(replicator.getLwm(), put));
 
             Inflight inflight = replicator.send(request);
 
@@ -191,9 +235,18 @@ public class Node {
 
             inflight.future().thenAccept(resp -> {
                 int val = majority.incrementAndGet();
+
+                if (resp.getReturn() != 0)
+                    err.incrementAndGet();
+
                 if (val == nodeIds.size() / 2 + 1) {
                     LOGGER.log(Level.DEBUG, "All ack " + inflight.ts() + " req=" + idd+ " node=" + id);
-                    resFut.complete(null);
+                    if (err.get() > 0) {
+                        resFut.completeExceptionally(new Exception("Replication failure"));
+                    } else {
+                        resFut.complete(null);
+                    }
+
                 } else {
                     LOGGER.log(Level.DEBUG, "Ack " + inflight.ts()+ " req=" + idd + " node=" + id);
                 }
@@ -259,6 +312,7 @@ public class Node {
 
         for (NodeId id : nodeIds) {
             Request r = new Request();
+            r.setSender(nodeId);
             r.setGrp(grp);
             r.setTs(now); // Propagate ts in idle sync.
 
@@ -268,7 +322,7 @@ public class Node {
                 group.replicators.put(id, replicator);
             }
 
-            r.setLwm(replicator.getLwm());
+            r.setPayload(new Sync(replicator.getLwm()));
 
             replicator.idleSync(r).thenAccept(resp -> {
                 int val = majority.incrementAndGet();

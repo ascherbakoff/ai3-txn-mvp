@@ -5,11 +5,19 @@ import com.ascherbakoff.ai3.cluster.NodeId;
 import java.util.UUID;
 
 public class Request {
+    private NodeId sender;
     private String grp;
     private Timestamp ts;
-    private Timestamp lwm;
     private Command payload;
     private UUID id;
+
+    public NodeId getSender() {
+        return sender;
+    }
+
+    public void setSender(NodeId sender) {
+        this.sender = sender;
+    }
 
     public String getGrp() {
         return grp;
@@ -25,14 +33,6 @@ public class Request {
 
     public Timestamp getTs() {
         return ts;
-    }
-
-    public Timestamp getLwm() {
-        return lwm;
-    }
-
-    public void setLwm(Timestamp lwm) {
-        this.lwm = lwm;
     }
 
     public void setPayload(Command payload) {
