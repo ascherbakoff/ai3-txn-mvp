@@ -24,24 +24,18 @@ public class LeaseholderAssignTest extends BasicTest {
         top = new Topology();
 
         alice = new NodeId("alice");
-        top.regiser(new Node(alice, top));
+        top.regiser(new Node(alice, top, clock));
 
         bob = new NodeId("bob");
-        top.regiser(new Node(bob, top));
+        top.regiser(new Node(bob, top, clock));
 
-        tracker = new Tracker(top);
+        tracker = new Tracker(top, clock);
 
         List<NodeId> nodeIds = new ArrayList<>();
         nodeIds.add(alice);
         nodeIds.add(bob);
 
         tracker.register(GRP_NAME, nodeIds);
-    }
-
-    private void adjustClocks(long delta) {
-        tracker.clock().adjust(delta);
-        top.getNode(alice).clock().adjust(delta);
-        top.getNode(bob).clock().adjust(delta);
     }
 
     @Test
@@ -69,8 +63,6 @@ public class LeaseholderAssignTest extends BasicTest {
         createCluster();
 
         tracker.assignLeaseholder(GRP_NAME, alice);
-
-        LOGGER.log(Level.INFO, "Tracker clock={0}", tracker.clock().now());
 
         assertEquals(alice, tracker.getCurrentLeaseHolder(GRP_NAME));
         for (Node node : top.getNodeMap().values()) {

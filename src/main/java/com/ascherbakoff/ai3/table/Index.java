@@ -10,4 +10,6 @@ public interface Index {
     AsyncCursor<VersionChain<Tuple>> eq(UUID txId, TxState txState, EqQuery query0);
 
     AsyncCursor<VersionChain<Tuple>> range(UUID txId, TxState txState, RangeQuery query0);
+
+    Cursor<VersionChain<Tuple>> eq(EqQuery query0);
 }

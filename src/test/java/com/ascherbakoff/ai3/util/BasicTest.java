@@ -3,12 +3,15 @@ package com.ascherbakoff.ai3.util;
 import static org.junit.jupiter.api.Assertions.fail;
 
 import com.ascherbakoff.ai3.clock.Clock;
+import com.ascherbakoff.ai3.clock.ManualTimeProvider;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BooleanSupplier;
 
 public class BasicTest {
-    protected Clock clock = new Clock();
+    protected ManualTimeProvider provider = new ManualTimeProvider();
+
+    protected Clock clock = new Clock(provider);
 
     private AtomicInteger idGen = new AtomicInteger();
 
@@ -31,4 +34,9 @@ public class BasicTest {
     protected UUID nextId() {
         return new UUID(0, idGen.incrementAndGet());
     }
+
+    protected void adjustClocks(long delta) {
+        provider.adjust(delta);
+    }
+
 }

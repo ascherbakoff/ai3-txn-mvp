@@ -91,4 +91,9 @@ public class HashNonUniqueIndex implements Index {
     public AsyncCursor<VersionChain<Tuple>> range(UUID txId, TxState txState, RangeQuery query0) {
         throw new UnsupportedOperationException();
     }
+
+    @Override
+    public Cursor<VersionChain<Tuple>> eq(EqQuery query0) {
+        return index.scan(query0.queryKey);
+    }
 }

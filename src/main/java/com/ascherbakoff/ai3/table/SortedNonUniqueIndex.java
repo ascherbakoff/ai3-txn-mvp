@@ -150,4 +150,9 @@ public class SortedNonUniqueIndex implements Index {
             }
         };
     }
+
+    @Override
+    public Cursor<VersionChain<Tuple>> eq(EqQuery query0) {
+        throw new UnsupportedOperationException("Not implemented");
+    }
 }

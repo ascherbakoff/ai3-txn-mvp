@@ -13,24 +13,24 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.function.Consumer;
 import org.jetbrains.annotations.Nullable;
 
 public class Tracker {
-    public static final int LEASE_DURATION = 20000;
+    public static final int LEASE_DURATION = 100;
     public static final int MAX_CLOCK_SKEW = 5;
 
     private static System.Logger LOGGER = System.getLogger(Tracker.class.getName());
 
     private Topology topology;
 
-    private Clock clock = new Clock();
+    private final Clock clock;
 
-    public Tracker(Topology topology) {
+    public Tracker(Topology topology, Clock clock) {
         this.topology = topology;
         this.client = new RpcClient(topology);
+        this.clock = clock;
     }
 
     private Map<String, Group> groups = new HashMap<>(); // Persistent state - survives restarts.
@@ -139,7 +139,7 @@ public class Tracker {
                 group.setState(nodeId, State.CATCHINGUP);
         }
 
-        Timestamp from = clock.tick();
+        Timestamp from = clock.now();
 
         if (group.getNodeState().get(candidate) == State.OFFLINE) // TODO refresh states
             return false; // Can't assign leaseholder on this iteration.

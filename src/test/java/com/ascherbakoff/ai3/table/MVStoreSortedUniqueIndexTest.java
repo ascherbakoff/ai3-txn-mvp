@@ -6,7 +6,6 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import com.ascherbakoff.ai3.clock.Timestamp;
 import com.ascherbakoff.ai3.lock.DeadlockPrevention;
 import com.ascherbakoff.ai3.lock.LockTable;
 import java.util.ArrayList;
@@ -182,9 +181,9 @@ public class MVStoreSortedUniqueIndexTest extends MVStoreBasicUniqueIndexTest {
                 .query(new RangeQuery(0, null, true, null, false), txId3).loadAll(new ArrayList<>());
 
         assertFalse(fut.isDone());
-        store.commit(txId, clock.tick());
+        store.commit(txId, clock.now());
         assertFalse(fut.isDone());
-        store.commit(txId2, clock.tick());
+        store.commit(txId2, clock.now());
 
         List<VersionChain<Tuple>> rows = fut.join();
         assertEquals(4, rows.size());

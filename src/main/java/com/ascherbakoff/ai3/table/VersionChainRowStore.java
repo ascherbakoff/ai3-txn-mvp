@@ -35,8 +35,6 @@ public class VersionChainRowStore<T> implements RowStore<VersionChain<T>, T> {
 
     @Override
     public T update(VersionChain<T> rowId, T newRow, UUID txId) {
-        assert rowId != null;
-
         return rowId.addWrite(newRow, txId);
     }
 

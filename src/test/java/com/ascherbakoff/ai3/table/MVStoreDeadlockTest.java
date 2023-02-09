@@ -37,7 +37,7 @@ public class MVStoreDeadlockTest extends BasicTest {
         UUID id3 = new UUID(0, 2);
 
         VersionChain<Tuple> rowId = store.insert(Tuple.create(0, "val0"), id1).join();
-        store.commit(id1, clock.tick());
+        store.commit(id1, clock.now());
 
         VersionChain<Tuple> row0 = store.query(new EqQuery(0, Tuple.create(0)), id2).loadAll(new ArrayList<>()).join().get(0);
         VersionChain<Tuple> row1 = store.query(new EqQuery(0, Tuple.create(0)), id3).loadAll(new ArrayList<>()).join().get(0);

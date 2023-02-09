@@ -73,6 +73,10 @@ class VersionChain<T> {
                 '}';
     }
 
+    synchronized @Nullable T head() {
+        return value;
+    }
+
     synchronized @Nullable T resolve(@Nullable UUID txId, @Nullable Timestamp timestamp, @Nullable Predicate<T> filter) {
         assert txId == null ^ timestamp == null;
 
@@ -101,8 +105,6 @@ class VersionChain<T> {
      * @param txId Txn id.
      */
     synchronized public T addWrite(T val, UUID txId) {
-        assert val != null;
-
         if (txId.equals(this.txId)) {
             T oldVal = value;
             value = val;

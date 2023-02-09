@@ -30,19 +30,18 @@ public class Node {
 
     private State state = State.STOPPED;
 
-    private Clock clock = new Clock();
+    private final Clock clock;
 
     private Executor executor = Executors.newSingleThreadExecutor();
-
-    private TrackerState trackerState = new TrackerState(Timestamp.min(), null, Map.of());
 
     private Map<String, Group> groups = new HashMap<>();
 
     private final Topology top;
 
-    public Node(NodeId nodeId, Topology top) {
+    public Node(NodeId nodeId, Topology top, Clock clock) {
         this.nodeId = nodeId;
         this.top = top;
+        this.clock = clock;
     }
 
     public void start() {
@@ -85,49 +84,49 @@ public class Node {
     public void visit(Put put, Request request, CompletableFuture<Response> resp) {
         Group grp = groups.get(request.getGrp());
         UUID txId = put.getTxId();
-        grp.table.insert(Tuple.create(put.getKey(), put.getValue()), txId).thenAccept(new Consumer<Integer>() {
-            @Override
-            public void accept(Integer key) {
-                resp.complete(new Response(Node.this.clock.now())); // TODO send key.
-            }
-        });
-        Timestamp commitTs = clock.tick();
-        grp.table.commit(txId, commitTs);
+        Timestamp commitTs = clock.now();
+        grp.table.put(put.getKey(), put.getValue(), commitTs);
+        resp.complete(new Response(commitTs));
     }
 
     public void visit(Lease lease, Request request, CompletableFuture<Response> resp) {
-        refresh(lease.name(), lease.from(), lease.candidate(), lease.nodeState()).thenAccept(ignored -> {
-            resp.complete(new Response(Node.this.clock.now()));
-        });
+        Timestamp now = Node.this.clock.now();
+        refresh(now, lease.name(), lease.from(), lease.candidate(), lease.nodeState());
+        resp.complete(new Response(now));
     }
 
-    public CompletableFuture<Void> refresh(String grp, Timestamp now, NodeId leaseholder, Map<NodeId, Tracker.State> nodeState) {
-        if (now.compareTo(this.trackerState.last) < 0) // Ignore stale updates.
-            return CompletableFuture.completedFuture(null);
-
+    public boolean refresh(Timestamp now, String grp, Timestamp leaseStart, NodeId leaseholder, Map<NodeId, Tracker.State> nodeState) {
         Group group = this.groups.get(grp);
         if (group == null) {
             group = new Group(grp);
             this.groups.put(grp, group);
         }
 
+        Timestamp prev = group.getLease();
+
+        if (prev != null && leaseStart.compareTo(prev) < 0) // Ignore stale updates.
+            return false;
+
+        if (prev != null && leaseStart.compareTo(prev.adjust(Tracker.LEASE_DURATION)) < 0 && !leaseholder.equals(group.getLeaseHolder())) // Ignore stale updates, except refresh for current leaseholder. TODO test
+            return false;
+
         group.setLeaseHolder(leaseholder);
-        group.setLease(now);
+        group.setLease(leaseStart);
         for (Entry<NodeId, Tracker.State> entry : nodeState.entrySet()) {
             group.setState(entry.getKey(), entry.getValue());
         }
 
-        clock.onRequest(now); // Sync clocks to lease.
+        clock.onRequest(leaseStart); // Sync clocks to lease.
 
         if (id().equals(leaseholder)) {
-            LOGGER.log(Level.INFO, "I am the leasholder: [interval={0}:{1}, at={2}, nodeId={3}]", this.trackerState.last, this.trackerState.last.adjust(Tracker.LEASE_DURATION), clock.now(), nodeId);
+            LOGGER.log(Level.INFO, "I am the leasholder: [interval={0}:{1}, at={2}, nodeId={3}]", leaseStart, leaseStart.adjust(Tracker.LEASE_DURATION), now, nodeId);
         } else {
-            LOGGER.log(Level.INFO, "Refresh leasholder: [interval={0}:{1}, at={2}], nodeId={3}", this.trackerState.last, this.trackerState.last.adjust(Tracker.LEASE_DURATION), clock.now(), nodeId);
+            LOGGER.log(Level.INFO, "Refresh leasholder: [interval={0}:{1}, at={2}], nodeId={3}", leaseStart, leaseStart.adjust(Tracker.LEASE_DURATION), now, nodeId);
         }
 
-        assert group.validLease(clock.now(), leaseholder);
+        assert group.validLease(now, leaseholder);
 
-        return CompletableFuture.completedFuture(null);
+        return true;
     }
 
     public Group group(String grp) {
@@ -236,23 +235,18 @@ public class Node {
         }
     }
 
-    public CompletableFuture<Integer> localGet(String grp, int key, UUID txId) {
+    public @Nullable Integer get(String grp, int key, Timestamp ts) {
         Group group = groups.get(grp);
+        assert group != null;
 
-        if (!group.validLease(clock.now(), nodeId)) {
-            return CompletableFuture.failedFuture(new IllegalStateException("Illegal lease"));
-        }
-
-        return group.table.get(key, txId).thenApply(val -> {
-            group.table.commit(txId, clock.tick());
-            return val;
-        });
+        return group.table.get(key, ts);
     }
 
     public CompletableFuture<Void> sync(String grp) {
         Group group = groups.get(grp);
 
-        if (!group.validLease(clock.now(), nodeId)) {
+        Timestamp now = clock.now();
+        if (!group.validLease(now, nodeId)) {
             return CompletableFuture.failedFuture(new IllegalStateException("Illegal lease"));
         }
 
@@ -263,17 +257,18 @@ public class Node {
 
         AtomicInteger majority = new AtomicInteger(0);
 
-        Request r = new Request();
-        r.setGrp(grp);
-        r.setTs(clock().tick()); // Propagate ts in idle sync.
-        r.setLwm(group.lwm);
-
         for (NodeId id : nodeIds) {
+            Request r = new Request();
+            r.setGrp(grp);
+            r.setTs(now); // Propagate ts in idle sync.
+
             Replicator replicator = group.replicators.get(id);
             if (replicator == null) {
                 replicator = new Replicator(this, id, grp, top);
                 group.replicators.put(id, replicator);
             }
+
+            r.setLwm(replicator.getLwm());
 
             replicator.idleSync(r).thenAccept(resp -> {
                 int val = majority.incrementAndGet();

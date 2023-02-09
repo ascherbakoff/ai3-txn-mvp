@@ -42,7 +42,7 @@ public class MVStoreFullScanTest extends BasicTest {
 
         assertFalse(supplyAsync(() -> fut1.isDone(), delayedExecutor(200, TimeUnit.MILLISECONDS)).join());
 
-        store.commit(txId2, clock.tick());
+        store.commit(txId2, clock.now());
 
         List<VersionChain<Tuple>> rows = fut1.join();
 

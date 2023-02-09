@@ -5,7 +5,6 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import com.ascherbakoff.ai3.clock.Timestamp;
 import com.ascherbakoff.ai3.lock.DeadlockPrevention;
 import com.ascherbakoff.ai3.lock.LockTable;
 import java.util.ArrayList;
@@ -17,7 +16,6 @@ import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 public class MVStoreSortedNonUniqueIndexTest extends MVStoreBasicNonUniqueIndexTest {
@@ -42,7 +40,7 @@ public class MVStoreSortedNonUniqueIndexTest extends MVStoreBasicNonUniqueIndexT
         store.insert(Tuple.create(1, "val1"), txId).join();
         store.insert(Tuple.create(1, "val2"), txId).join();
         store.insert(Tuple.create(2, "val2"), txId).join();
-        store.commit(txId, clock.tick());
+        store.commit(txId, clock.now());
 
         assertEquals(3, store.query(new RangeQuery(0, Tuple.create(0), true, Tuple.create(0), true), txId)
                 .loadAll(new ArrayList<>()).join().size());
@@ -91,9 +89,9 @@ public class MVStoreSortedNonUniqueIndexTest extends MVStoreBasicNonUniqueIndexT
                 .query(new RangeQuery(0, null, true, null, false), txId3).loadAll(new ArrayList<>());
 
         assertFalse(fut.isDone());
-        store.commit(txId, clock.tick());
+        store.commit(txId, clock.now());
         assertFalse(fut.isDone());
-        store.commit(txId2, clock.tick());
+        store.commit(txId2, clock.now());
 
         List<VersionChain<Tuple>> rows = fut.join();
         assertEquals(5, rows.size());
@@ -161,7 +159,7 @@ public class MVStoreSortedNonUniqueIndexTest extends MVStoreBasicNonUniqueIndexT
 
         assertEquals(4, rows.size());
 
-        store.commit(txId, clock.tick());
+        store.commit(txId, clock.now());
 
         fut.join();
 
@@ -207,7 +205,7 @@ public class MVStoreSortedNonUniqueIndexTest extends MVStoreBasicNonUniqueIndexT
 
         assertEquals(4, rows.size());
 
-        store.commit(txId, clock.tick());
+        store.commit(txId, clock.now());
 
         fut.join();
 
@@ -250,7 +248,7 @@ public class MVStoreSortedNonUniqueIndexTest extends MVStoreBasicNonUniqueIndexT
 
         assertEquals(5, rows.size());
 
-        store.commit(txId, clock.tick());
+        store.commit(txId, clock.now());
 
         fut.join();
 
@@ -267,7 +265,7 @@ public class MVStoreSortedNonUniqueIndexTest extends MVStoreBasicNonUniqueIndexT
 
         store.insert(Tuple.create(1, "val0"), txId).join();
         store.insert(Tuple.create(3, "val3"), txId).join();
-        store.commit(txId, clock.tick());
+        store.commit(txId, clock.now());
 
         UUID txId2 = new UUID(0, 2);
 
@@ -285,7 +283,7 @@ public class MVStoreSortedNonUniqueIndexTest extends MVStoreBasicNonUniqueIndexT
 
         UUID txId3 = new UUID(0, 3);
         store.insert(Tuple.create(2, "val2"), txId3).join();
-        store.commit(txId3, clock.tick());
+        store.commit(txId3, clock.now());
 
         query.delayOnNext.await();
 
@@ -315,7 +313,7 @@ public class MVStoreSortedNonUniqueIndexTest extends MVStoreBasicNonUniqueIndexT
         CompletableFuture<Tuple> fut = getSingleAsync(txId2, 0, Tuple.create(2));
         assertFalse(fut.isDone());
 
-        store.commit(txId, clock.tick());
+        store.commit(txId, clock.now());
         assertEquals(Tuple.create(2, "val2"), fut.join());
     }
 

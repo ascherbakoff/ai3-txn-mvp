@@ -32,7 +32,7 @@ public class VersionChainRowStoreTest extends BasicTest {
         assertTrue(heads.size() == 1);
         assertEquals(t1, store.get(heads.get(0), txId1, null));
 
-        Timestamp commitTs = clock.tick();
+        Timestamp commitTs = clock.now();
         store.commitWrite(head, commitTs, txId1);
         assertNull(head.txId);
         assertEquals(commitTs, head.begin);
@@ -60,7 +60,7 @@ public class VersionChainRowStoreTest extends BasicTest {
         store.update(head, t2, txId1);
         assertEquals(t2, store.get(head, txId1, null));
 
-        Timestamp commitTs = clock.tick();
+        Timestamp commitTs = clock.now();
         store.commitWrite(head, commitTs, txId1);
         assertNull(head.txId);
         assertEquals(commitTs, head.begin);
@@ -93,32 +93,32 @@ public class VersionChainRowStoreTest extends BasicTest {
         Tuple t1 = Tuple.create("name1", "id1@some.org");
         UUID txId1 = new UUID(0, 0);
         VersionChain<Tuple> rowId = store.insert(t1, txId1);
-        Timestamp commitTs1 = clock.tick();
+        Timestamp commitTs1 = clock.now();
         store.commitWrite(rowId, commitTs1, txId1);
 
         Tuple t2 = Tuple.create("name2", "id2@some.org");
         UUID txId2 = new UUID(0, 1);
         store.update(rowId, t2, txId2);
-        Timestamp commitTs2 = clock.tick();
+        Timestamp commitTs2 = clock.now();
         store.commitWrite(rowId, commitTs2, txId2);
 
         Tuple t3 = Tuple.create("name3", "id3@some.org");
         UUID txId3 = new UUID(0, 2);
         store.update(rowId, t3, txId3);
-        Timestamp commitTs3 = clock.tick();
+        Timestamp commitTs3 = clock.now();
         store.abortWrite(rowId, txId3);
 
         Tuple t4 = Tuple.create("name4", "id4@some.org");
         UUID txId4 = new UUID(0, 3);
         store.update(rowId, t4, txId4);
-        Timestamp commitTs4 = clock.tick();
+        Timestamp commitTs4 = clock.now();
         store.commitWrite(rowId, commitTs4, txId4);
 
         assertEquals(t4, store.get(rowId, commitTs4, null));
 
         UUID txId5 = new UUID(0, 4);
         store.update(rowId, Tuple.TOMBSTONE, txId5);
-        Timestamp commitTs5 = clock.tick();
+        Timestamp commitTs5 = clock.now();
         store.commitWrite(rowId, commitTs5, txId5);
 
         assertSame(Tuple.TOMBSTONE, store.get(rowId, new UUID(0, 5), null));

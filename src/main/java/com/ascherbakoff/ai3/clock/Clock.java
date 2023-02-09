@@ -1,29 +1,42 @@
 package com.ascherbakoff.ai3.clock;
 
-import java.util.concurrent.atomic.AtomicLong;
+import org.jetbrains.annotations.TestOnly;
 
 public class Clock {
-    private AtomicLong seq = new AtomicLong();
+    private final PhysicalTimeProvider provider;
 
-    private Timestamp now = Timestamp.min();
+    private Timestamp current = new Timestamp(0, 0);
+
+    public Clock(PhysicalTimeProvider provider) {
+        this.provider = provider;
+    }
 
     public synchronized Timestamp now() {
-        return now;
+        long physNew = provider.get();
+
+        if (physNew > current.physical())
+            current = new Timestamp(physNew, 0);
+        else
+            current = new Timestamp(current.physical(), current.counter() + 1);
+
+        return current;
     }
 
-    public synchronized Timestamp tick() {
-        return adjust(1);
-    }
-
-    public synchronized Timestamp adjust(long delta) {
-        now = new Timestamp(seq.addAndGet(delta));
-        return now;
+    @TestOnly
+    public synchronized Timestamp get() {
+        return current;
     }
 
     public synchronized void onRequest(Timestamp ts) {
-        if (ts.compareTo(now) > 0) {
-            seq.set(ts.counter());
-            now = new Timestamp(ts.counter());
+        long physNew = provider.get();
+        long logic = current.counter();
+
+        if (ts.physical() != physNew) {
+            current = new Timestamp(Math.max(physNew, ts.physical()), 0);
+        } else {
+            if (ts.counter() != logic) {
+                current = new Timestamp(physNew, Math.max(ts.counter(), logic));
+            }
         }
     }
 
@@ -32,9 +45,9 @@ public class Clock {
     }
 
     @Override
-    public String toString() {
+    public synchronized String toString() {
         return "Clock{" +
-                "now=" + now +
+                "now=" + current +
                 '}';
     }
 }

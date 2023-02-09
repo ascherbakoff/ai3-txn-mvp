@@ -28,4 +28,6 @@ public interface MVStore {
 
     // Aborts a transaction
     void abort(UUID txId);
+
+    Cursor<VersionChain<Tuple>> localQuery(Query query);
 }

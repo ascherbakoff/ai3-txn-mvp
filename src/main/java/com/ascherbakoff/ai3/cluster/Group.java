@@ -3,19 +3,21 @@ package com.ascherbakoff.ai3.cluster;
 import com.ascherbakoff.ai3.clock.Timestamp;
 import com.ascherbakoff.ai3.cluster.Tracker.State;
 import com.ascherbakoff.ai3.replication.Replicator;
-import com.ascherbakoff.ai3.table.KvTable;
+import com.ascherbakoff.ai3.table.MVKeyValueTable;
 import java.util.HashMap;
 import java.util.Map;
 import org.jetbrains.annotations.Nullable;
 
 public class Group {
     private final String name;
-    public Timestamp lwm = Timestamp.min();
+
+    public Timestamp lwm = Timestamp.min(); // Replication data low watermark.
+
     private Map<NodeId, State> nodeState = new HashMap<>();
 
     Map<NodeId, Replicator> replicators = new HashMap<>();
 
-    KvTable<Integer, Integer> table = new KvTable<>();
+    MVKeyValueTable<Integer, Integer> table = new MVKeyValueTable<>();
 
     private Timestamp lease;
 

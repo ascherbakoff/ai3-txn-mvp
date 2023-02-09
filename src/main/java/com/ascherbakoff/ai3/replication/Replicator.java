@@ -16,6 +16,7 @@ public class Replicator {
     private static System.Logger LOGGER = System.getLogger(Replicator.class.getName());
 
     private final Node node;
+
     private final String grp;
 
     private NodeId nodeId;
@@ -40,7 +41,7 @@ public class Replicator {
         Inflight inflight;
 
         synchronized (this) {
-            inflight = new Inflight();
+            inflight = new Inflight(node.clock().now());
             inflights.put(inflight.ts, inflight);
             assert inflight == inflights.lastEntry().getValue(); // Must insert in ts order.
         }
@@ -114,12 +115,13 @@ public class Replicator {
     }
 
     public class Inflight {
-        private final Timestamp ts = node.clock().tick();
+        private final Timestamp ts;
         private final CompletableFuture<Response> fut = new CompletableFuture<>();
         private boolean acked;
         private Response done;
 
-        Inflight() {
+        Inflight(Timestamp now) {
+            this.ts = now;
         }
 
         public void setAcked(boolean acked) {

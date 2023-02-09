@@ -33,7 +33,7 @@ public abstract class MVStoreBasicTest extends BasicTest {
         assertEquals(3, store.txnLocalMap.get(txId).locks.size());
         assertEquals(3, store.txnLocalMap.get(txId).writes.size());
 
-        store.commit(txId, clock.tick());
+        store.commit(txId, clock.now());
         assertNull(store.txnLocalMap.get(txId));
 
         assertEquals(t0, getSingle(txId, 0, Tuple.create(0)));
@@ -49,14 +49,14 @@ public abstract class MVStoreBasicTest extends BasicTest {
         UUID txId4 = new UUID(0, 3);
 
         VersionChain<Tuple> rowId = store.insert(Tuple.create(0, "val0"), txId).join();
-        store.commit(txId, clock.tick());
+        store.commit(txId, clock.now());
         store.update(rowId, Tuple.create(1, "val1"), txId2).join();
 
         assertEquals(Tuple.create(1, "val1"), getSingle(txId2, 0, Tuple.create(1)));
 
-        store.commit(txId2, clock.tick());
+        store.commit(txId2, clock.now());
         store.update(rowId, Tuple.TOMBSTONE, txId3).join();
-        store.commit(txId3, clock.tick());
+        store.commit(txId3, clock.now());
 
         assertNull(getSingle(txId4, 0, Tuple.create(0)));
         assertNull(getSingle(txId4, 0, Tuple.create(1)));
@@ -102,7 +102,7 @@ public abstract class MVStoreBasicTest extends BasicTest {
         UUID txId3 = new UUID(0, 2);
 
         VersionChain<Tuple> rowId = store.insert(Tuple.create(0, "val0"), txId).join();
-        store.commit(txId, clock.tick());
+        store.commit(txId, clock.now());
 
         store.update(rowId, Tuple.create(1, "val1"), txId2).join();
         store.abort(txId2);
@@ -118,11 +118,11 @@ public abstract class MVStoreBasicTest extends BasicTest {
         UUID txId3 = new UUID(0, 2);
 
         VersionChain<Tuple> rowId = store.insert(Tuple.create(0, "val0"), txId).join();
-        store.commit(txId, clock.tick());
+        store.commit(txId, clock.now());
 
         store.update(rowId, Tuple.create(1, "val1"), txId2).join();
         store.update(rowId, Tuple.TOMBSTONE, txId2).join();
-        store.commit(txId2, clock.tick());
+        store.commit(txId2, clock.now());
 
         assertNull(getSingle(txId3, 0, Tuple.create(0)));
         assertNull(getSingle(txId3, 0, Tuple.create(1)));
@@ -136,7 +136,7 @@ public abstract class MVStoreBasicTest extends BasicTest {
 
         VersionChain<Tuple> rowId = store.insert(Tuple.create(0, "val0"), txId).join();
         store.update(rowId, Tuple.create(1, "val1"), txId).join();
-        Timestamp t1 = clock.tick();
+        Timestamp t1 = clock.now();
         store.commit(txId, t1);
 
         store.insert(Tuple.create(0, "val2"), txId2).join();
@@ -160,7 +160,7 @@ public abstract class MVStoreBasicTest extends BasicTest {
         assertEquals(t1, getSingle(txId1, 0, Tuple.create(0)));
         assertEquals(t2, getSingle(txId1, 0, Tuple.create(1)));
 
-        store.commit(txId1, clock.tick());
+        store.commit(txId1, clock.now());
 
         assertEquals(t1, getSingle(txId1, 0, Tuple.create(0)));
         assertEquals(t2, getSingle(txId1, 0, Tuple.create(1)));
@@ -174,15 +174,15 @@ public abstract class MVStoreBasicTest extends BasicTest {
 
         // TX1: id1 = insert [john, 100], TX1 // Insert tuple into row store
         VersionChain<Tuple> rowId = store.insert(Tuple.create(0, "val0"), txId).join();
-        store.commit(txId, clock.tick());
+        store.commit(txId, clock.now());
 
 //        // TX2: update id1, [john, 200], TX2 // Change salary for id1
         store.update(rowId, Tuple.create(1, "val1"), txId2).join();
-        store.commit(txId2, clock.tick());
+        store.commit(txId2, clock.now());
 
         // TX3: id2 = insert [bill, 100], TX3
         store.insert(Tuple.create(0, "val2"), txId3).join(); // Insert must success.
-        store.commit(txId3, clock.tick());
+        store.commit(txId3, clock.now());
     }
 
     @Test
@@ -192,7 +192,7 @@ public abstract class MVStoreBasicTest extends BasicTest {
         UUID txI3 = new UUID(0, 3);
 
         store.insert(Tuple.create(10, "val1"), txId).join();
-        store.commit(txId, clock.tick());
+        store.commit(txId, clock.now());
 
         store.insert(Tuple.create(9, "val2"), txI2).join();
 

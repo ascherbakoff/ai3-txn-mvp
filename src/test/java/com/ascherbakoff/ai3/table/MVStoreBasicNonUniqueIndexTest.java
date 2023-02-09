@@ -4,7 +4,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 
-import com.ascherbakoff.ai3.clock.Timestamp;
 import com.ascherbakoff.ai3.lock.DeadlockPrevention;
 import com.ascherbakoff.ai3.lock.LockTable;
 import java.util.Map;
@@ -40,8 +39,8 @@ public abstract class MVStoreBasicNonUniqueIndexTest extends MVStoreBasicTest {
         store.insert(Tuple.create(0, "val0"), txId).join();
         store.insert(Tuple.create(0, "val0"), txId2).join();
 
-        store.commit(txId, clock.tick());
-        store.commit(txId2, clock.tick());
+        store.commit(txId, clock.now());
+        store.commit(txId2, clock.now());
     }
 
     @Test
@@ -55,11 +54,11 @@ public abstract class MVStoreBasicNonUniqueIndexTest extends MVStoreBasicTest {
         CompletableFuture<VersionChain<Tuple>> fut = store.insert(Tuple.create(0, "val0"), txId2);
         assertFalse(fut.isDone());
 
-        store.commit(txId, clock.tick());
+        store.commit(txId, clock.now());
 
         fut.join();
 
-        store.commit(txId2, clock.tick());
+        store.commit(txId2, clock.now());
     }
 
     @Test
@@ -70,17 +69,17 @@ public abstract class MVStoreBasicNonUniqueIndexTest extends MVStoreBasicTest {
         UUID txId4 = new UUID(0, 4);
 
         VersionChain<Tuple> rowId = store.insert(Tuple.create(0, "val0"), txId).join();
-        store.commit(txId, clock.tick());
+        store.commit(txId, clock.now());
 
         store.update(rowId, Tuple.create(1, "val1"), txId2).join();
-        store.commit(txId2, clock.tick());
+        store.commit(txId2, clock.now());
 
         store.update(rowId, Tuple.create(0, "val2"), txId3).join();
-        store.commit(txId3, clock.tick());
+        store.commit(txId3, clock.now());
 
         // TX3: id2 = insert [bill, 100], TX3
         store.insert(Tuple.create(0, "val3"), txId4).join();
-        store.commit(txId4, clock.tick());
+        store.commit(txId4, clock.now());
     }
 
     @Test

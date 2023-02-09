@@ -5,7 +5,6 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
-import com.ascherbakoff.ai3.clock.Timestamp;
 import com.ascherbakoff.ai3.lock.DeadlockPrevention;
 import com.ascherbakoff.ai3.lock.LockTable;
 import java.util.Map;
@@ -45,7 +44,7 @@ public abstract class MVStoreBasicUniqueIndexTest extends MVStoreBasicTest {
         CompletableFuture<?> fut = store.insert(Tuple.create(0, "val0"), txId2);
         assertFalse(fut.isDone());
 
-        store.commit(txId, clock.tick());
+        store.commit(txId, clock.now());
 
         var err = assertThrows(CompletionException.class, () -> {
             fut.join();
@@ -61,13 +60,13 @@ public abstract class MVStoreBasicUniqueIndexTest extends MVStoreBasicTest {
         UUID txId4 = new UUID(0, 4);
 
         VersionChain<Tuple> rowId = store.insert(Tuple.create(0, "val0"), txId).join();
-        store.commit(txId, clock.tick());
+        store.commit(txId, clock.now());
 
         store.update(rowId, Tuple.create(1, "val1"), txId2).join();
-        store.commit(txId2, clock.tick());
+        store.commit(txId2, clock.now());
 
         store.update(rowId, Tuple.create(0, "val2"), txId3).join();
-        store.commit(txId3, clock.tick());
+        store.commit(txId3, clock.now());
 
         // TX3: id2 = insert [bill, 100], TX3
         var err = assertThrows(CompletionException.class, () -> store.insert(Tuple.create(0, "val3"), txId4).join());
@@ -80,14 +79,14 @@ public abstract class MVStoreBasicUniqueIndexTest extends MVStoreBasicTest {
         UUID txId2 = new UUID(0, 1);
 
         VersionChain<Tuple> rowId = store.insert(Tuple.create(0, "val0"), txId).join();
-        store.commit(txId, clock.tick());
+        store.commit(txId, clock.now());
 
         store.update(rowId, Tuple.create(1, "val1"), txId2).join();
         store.update(rowId, Tuple.create(0, "val2"), txId2).join();
 
         assertEquals(Tuple.create(0, "val2"), getSingle(txId2, 0, Tuple.create(0)));
 
-        store.commit(txId2, clock.tick());
+        store.commit(txId2, clock.now());
 
         assertEquals(Tuple.create(0, "val2"), getSingle(txId2, 0, Tuple.create(0)));
     }
@@ -100,10 +99,10 @@ public abstract class MVStoreBasicUniqueIndexTest extends MVStoreBasicTest {
         UUID txId4 = new UUID(0, 4);
 
         VersionChain<Tuple> rowId = store.insert(Tuple.create(0, "val0"), txId).join();
-        store.commit(txId, clock.tick());
+        store.commit(txId, clock.now());
 
         store.update(rowId, Tuple.create(1, "val1"), txId2).join();
-        store.commit(txId2, clock.tick());
+        store.commit(txId2, clock.now());
 
         Tuple res = Tuple.create(0, "val3");
         store.insert(res, txId4).join();
@@ -111,7 +110,7 @@ public abstract class MVStoreBasicUniqueIndexTest extends MVStoreBasicTest {
         CompletableFuture<Tuple> fut = store.update(rowId, Tuple.create(0, "val2"), txId3);
         assertFalse(fut.isDone());
 
-        store.commit(txId4, clock.tick());
+        store.commit(txId4, clock.now());
 
         var err = assertThrows(CompletionException.class, () -> fut.join());
         assertEquals(UniqueException.class, err.getCause().getClass());
@@ -126,7 +125,7 @@ public abstract class MVStoreBasicUniqueIndexTest extends MVStoreBasicTest {
 
         CompletableFuture<Tuple> fut = getSingleAsync(txId2, 0, Tuple.create(0));
 
-        store.commit(txId, clock.tick());
+        store.commit(txId, clock.now());
 
         assertEquals(Tuple.create(0, "val0"), fut.join());
     }
@@ -143,7 +142,7 @@ public abstract class MVStoreBasicUniqueIndexTest extends MVStoreBasicTest {
 
         assertNull(getSingle(txId2, 0, Tuple.create(0)));
 
-        store.commit(txId2, clock.tick());
+        store.commit(txId2, clock.now());
 
         fut.join();
 
@@ -171,7 +170,7 @@ public abstract class MVStoreBasicUniqueIndexTest extends MVStoreBasicTest {
         UUID txId3 = new UUID(0, 2);
 
         VersionChain<Tuple> rowId = store.insert(Tuple.create(0, "val0"), txId).join();
-        store.commit(txId, clock.tick());
+        store.commit(txId, clock.now());
 
         store.update(rowId, Tuple.create(0, "val1"), txId2).join();
 
@@ -180,7 +179,7 @@ public abstract class MVStoreBasicUniqueIndexTest extends MVStoreBasicTest {
         CompletableFuture<Tuple> fut2 = getSingleAsync(txId3, 0, Tuple.create(0));
         assertFalse(fut2.isDone());
 
-        store.commit(txId2, clock.tick());
+        store.commit(txId2, clock.now());
 
         assertEquals(Tuple.create(0, "val1"), fut.join());
         fut2.join(); // Both futures are concurrent
@@ -194,7 +193,7 @@ public abstract class MVStoreBasicUniqueIndexTest extends MVStoreBasicTest {
         UUID txId3 = new UUID(0, 2);
 
         VersionChain<Tuple> rowId = store.insert(Tuple.create(0, "val0"), txId).join();
-        store.commit(txId, clock.tick());
+        store.commit(txId, clock.now());
 
         store.update(rowId, Tuple.create(0, "val1"), txId2).join();
 
@@ -217,7 +216,7 @@ public abstract class MVStoreBasicUniqueIndexTest extends MVStoreBasicTest {
         UUID txId3 = new UUID(0, 2);
 
         VersionChain<Tuple> rowId = store.insert(Tuple.create(0, "val0"), txId).join();
-        store.commit(txId, clock.tick());
+        store.commit(txId, clock.now());
 
         store.remove(rowId, txId2).join();
 
@@ -226,7 +225,7 @@ public abstract class MVStoreBasicUniqueIndexTest extends MVStoreBasicTest {
         CompletableFuture<Tuple> fut2 = getSingleAsync(txId3, 0, Tuple.create(0));
         assertFalse(fut2.isDone());
 
-        store.commit(txId2, clock.tick());
+        store.commit(txId2, clock.now());
 
         fut.join();
         fut2.join();
@@ -240,7 +239,7 @@ public abstract class MVStoreBasicUniqueIndexTest extends MVStoreBasicTest {
         UUID txId3 = new UUID(0, 2);
 
         VersionChain<Tuple> rowId = store.insert(Tuple.create(0, "val0"), txId).join();
-        store.commit(txId, clock.tick());
+        store.commit(txId, clock.now());
 
         store.remove(rowId, txId2).join();
 

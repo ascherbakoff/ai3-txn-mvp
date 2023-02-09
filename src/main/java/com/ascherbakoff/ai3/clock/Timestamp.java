@@ -1,29 +1,30 @@
 package com.ascherbakoff.ai3.clock;
 
-import org.jetbrains.annotations.NotNull;
-
 public class Timestamp implements Comparable<Timestamp> {
+    private final long physical;
+
     private final long counter;
 
-    Timestamp(long counter) {
+    Timestamp(long physical, long counter) {
+        this.physical = physical;
         this.counter = counter;
+    }
+
+    public long physical() {
+        return physical;
     }
 
     public long counter() {
         return counter;
     }
 
-    @Override
-    public int compareTo(@NotNull Timestamp o) {
-        return Long.compare(counter(), o.counter());
-    }
-
     public Timestamp adjust(long delta) {
-        return new Timestamp(counter() + delta);
+        assert delta > 0;
+        return new Timestamp(physical + delta, 0);
     }
 
     public static Timestamp min() {
-        return new Timestamp(0);
+        return new Timestamp(0, 0);
     }
 
     @Override
@@ -37,6 +38,9 @@ public class Timestamp implements Comparable<Timestamp> {
 
         Timestamp timestamp = (Timestamp) o;
 
+        if (physical != timestamp.physical) {
+            return false;
+        }
         if (counter != timestamp.counter) {
             return false;
         }
@@ -46,13 +50,22 @@ public class Timestamp implements Comparable<Timestamp> {
 
     @Override
     public int hashCode() {
-        return (int) (counter ^ (counter >>> 32));
+        int result = (int) (physical ^ (physical >>> 32));
+        result = 31 * result + (int) (counter ^ (counter >>> 32));
+        return result;
+    }
+
+    @Override
+    public int compareTo(Timestamp other) {
+        if (this.physical == other.physical) {
+            return Long.compare(this.counter, other.counter);
+        }
+
+        return Long.compare(this.physical, other.physical);
     }
 
     @Override
     public String toString() {
-        return "Timestamp{" +
-                "counter=" + counter +
-                '}';
+        return "[" + physical + ":" + counter + "]";
     }
 }

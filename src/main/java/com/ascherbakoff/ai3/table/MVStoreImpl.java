@@ -113,7 +113,7 @@ public class MVStoreImpl implements MVStore {
             Index idx = indexes.get(query0.col);
 
             if (idx == null) {
-                throw new IllegalArgumentException("Hash index not found for col=" + query0.col);
+                throw new IllegalArgumentException("Index not found for col=" + query0.col);
             }
 
             return idx.eq(txId, txState, query0);
@@ -123,7 +123,7 @@ public class MVStoreImpl implements MVStore {
             Index idx = indexes.get(query0.col);
 
             if (idx == null) {
-                throw new IllegalArgumentException("Hash index not found for col=" + query0.col);
+                throw new IllegalArgumentException("Index not found for col=" + query0.col);
             }
 
             return idx.range(txId, txState, query0);
@@ -172,6 +172,23 @@ public class MVStoreImpl implements MVStore {
 
         for (Lock lock : state.locks) {
             lock.release(txId);
+        }
+    }
+
+    @Override
+    public Cursor<VersionChain<Tuple>> localQuery(Query query) {
+        if (query instanceof EqQuery) {
+            EqQuery query0 = (EqQuery) query;
+
+            Index idx = indexes.get(query0.col);
+
+            if (idx == null) {
+                throw new IllegalArgumentException("Index not found for col=" + query0.col);
+            }
+
+            return idx.eq(query0);
+        } else {
+            throw new UnsupportedOperationException("Not implemented");
         }
     }
 
