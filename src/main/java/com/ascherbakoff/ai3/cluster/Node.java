@@ -20,11 +20,20 @@ import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.jetbrains.annotations.Nullable;
 
 public class Node {
     private static System.Logger LOGGER = System.getLogger(Node.class.getName());
+
+//    static {
+//        Logger root = Logger.getLogger("");
+//        root.setLevel(java.util.logging.Level.ALL);
+//        for (Handler handler : root.getHandlers()) {
+//            handler.setLevel(java.util.logging.Level.ALL);
+//        }
+//    }
 
     private final NodeId nodeId;
 
@@ -213,6 +222,7 @@ public class Node {
 
         AtomicInteger majority = new AtomicInteger(0);
         AtomicInteger err = new AtomicInteger(0);
+        AtomicBoolean localDone = new AtomicBoolean();
 
         UUID idd = UUID.randomUUID();
 
@@ -239,7 +249,11 @@ public class Node {
                 if (resp.getReturn() != 0)
                     err.incrementAndGet();
 
-                if (val == nodeIds.size() / 2 + 1) {
+                if (id.equals(this.nodeId))
+                    localDone.set(true);
+
+                // Need both majority and local comletion.
+                if (val >= nodeIds.size() / 2 + 1 && localDone.get()) {
                     LOGGER.log(Level.DEBUG, "All ack " + inflight.ts() + " req=" + idd+ " node=" + id);
                     if (err.get() > 0) {
                         resFut.completeExceptionally(new Exception("Replication failure"));

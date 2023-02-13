@@ -58,12 +58,13 @@ public class Replicator {
                 node.clock().onResponse(response.getTs());
 
                 synchronized (Replicator.this) {
-                    if (throwable != null)
-                        throwable.printStackTrace();
-                    assert throwable == null : throwable; // TODO handle errors.
-
                     Set<Entry<Timestamp, Inflight>> set = inflights.entrySet();
-                    inflight.setAcked(true);
+
+                    if (throwable == null) {
+                        inflight.future().complete(response);
+                    } else {
+                        inflight.future().completeExceptionally(throwable);
+                    }
 
                     Iterator<Entry<Timestamp, Inflight>> iter = set.iterator();
 
@@ -71,14 +72,12 @@ public class Replicator {
                     while (iter.hasNext()) {
                         Entry<Timestamp, Inflight> entry = iter.next();
 
-                        if (entry.getValue().isAcked()) {
+                        if (entry.getValue().future().isDone()) {
                             iter.remove();
                             assert entry.getKey().compareTo(lwm) > 0;
                             lwm = entry.getKey(); // Adjust lwm.
 
-                            LOGGER.log(Level.DEBUG, "OnAck id={0}, lwm={1}", request.getTs(), lwm);
-
-                            entry.getValue().setDone(response); // TODO move out of lock.
+                            LOGGER.log(Level.DEBUG, "OnRemove id={0}, lwm={1}", request.getTs(), lwm);
                         } else {
                             break;
                         }
@@ -117,19 +116,10 @@ public class Replicator {
     public class Inflight {
         private final Timestamp ts;
         private final CompletableFuture<Response> fut = new CompletableFuture<>();
-        private boolean acked;
         private Response done;
 
         Inflight(Timestamp now) {
             this.ts = now;
-        }
-
-        public void setAcked(boolean acked) {
-            this.acked = acked;
-        }
-
-        public boolean isAcked() {
-            return acked;
         }
 
         public void setDone(Response done) {
@@ -148,7 +138,6 @@ public class Replicator {
         public String toString() {
             return "Inflight{" +
                     "ts=" + ts +
-                    ", acked=" + acked +
                     ", isDone=" + fut.isDone() +
                     '}';
         }
