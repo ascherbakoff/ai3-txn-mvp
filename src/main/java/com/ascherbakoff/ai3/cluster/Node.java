@@ -203,71 +203,80 @@ public class Node {
         return null;
     }
 
-
-    public Result replicate(String grp, Put put) {
+    /**
+     * Replicates a Put.
+     *
+     * Safety node: this methods must be bound to a single thread.
+     *
+     * @param grp The group.
+     * @param put The command.
+     * @return The result.
+     */
+    public CompletableFuture<Void> replicate(String grp, Put put) {
         Group group = groups.get(grp);
 
-        if (!group.validLease(clock.now(), nodeId)) {
-            Result res = new Result();
-            res.setFuture(CompletableFuture.failedFuture(new IllegalStateException("Illegal lease")));
-            return res;
+        Timestamp now = clock.now();
+        if (!group.validLease(now, nodeId)) {
+            return CompletableFuture.failedFuture(new IllegalStateException("Illegal lease"));
         }
-
-        Set<NodeId> nodeIds = group.getNodeState().keySet();
 
         CompletableFuture<Void> resFut = new CompletableFuture<>();
 
-        Result res = new Result();
-        res.setFuture(resFut);
+        // TODO implement batching by concatenating queue elements into single message.
+        group.executorService.submit(new Runnable() {
+            @Override
+            public void run() {
+                Set<NodeId> nodeIds = group.getNodeState().keySet();
 
-        AtomicInteger majority = new AtomicInteger(0);
-        AtomicInteger err = new AtomicInteger(0);
-        AtomicBoolean localDone = new AtomicBoolean();
+                AtomicInteger majority = new AtomicInteger(0);
+                AtomicInteger err = new AtomicInteger(0);
+                AtomicBoolean localDone = new AtomicBoolean();
 
-        UUID idd = UUID.randomUUID();
+                UUID traceId = UUID.randomUUID();
 
-        for (NodeId id : nodeIds) {
-            Replicator replicator = group.replicators.get(id);
-            if (replicator == null) {
-                replicator = new Replicator(this, id, grp, top); // TODO do we need to pass top ?
-                group.replicators.put(id, replicator);
-            }
-
-            Request request = new Request(); // Creating the request copy is essential.
-            request.setId(idd);
-            request.setSender(nodeId);
-            request.setGrp(grp);
-            request.setPayload(new Replicate(replicator.getLwm(), put));
-
-            Inflight inflight = replicator.send(request);
-
-            res.getPending().put(id, inflight);
-
-            inflight.future().thenAccept(resp -> {
-                int val = majority.incrementAndGet();
-
-                if (resp.getReturn() != 0)
-                    err.incrementAndGet();
-
-                if (id.equals(this.nodeId))
-                    localDone.set(true);
-
-                // Need both majority and local comletion.
-                if (val >= nodeIds.size() / 2 + 1 && localDone.get()) {
-                    LOGGER.log(Level.DEBUG, "All ack " + inflight.ts() + " req=" + idd+ " node=" + id);
-                    if (err.get() > 0) {
-                        resFut.completeExceptionally(new Exception("Replication failure"));
-                    } else {
-                        resFut.complete(null);
+                for (NodeId id : nodeIds) {
+                    Replicator replicator = group.replicators.get(id);
+                    if (replicator == null) {
+                        replicator = new Replicator(Node.this, id, grp, top); // TODO do we need to pass top ?
+                        group.replicators.put(id, replicator);
                     }
 
-                } else {
-                    LOGGER.log(Level.DEBUG, "Ack " + inflight.ts()+ " req=" + idd + " node=" + id);
-                }
-            });
-        }
+                    Request request = new Request(); // Creating the request copy is essential.
+                    request.setId(traceId);
+                    request.setTs(now);
+                    request.setSender(nodeId);
+                    request.setGrp(grp);
+                    request.setPayload(new Replicate(replicator.getLwm(), put));
 
-        return res;
+                    Inflight inflight = replicator.send(request);
+
+                    inflight.future().thenAccept(resp -> {
+                        int val = majority.incrementAndGet();
+
+                        if (resp.getReturn() != 0)
+                            err.incrementAndGet();
+
+                        if (id.equals(Node.this.nodeId))
+                            localDone.set(true);
+
+                        // Need both majority and local completion.
+                        if (val >= nodeIds.size() / 2 + 1 && localDone.get()) {
+                            LOGGER.log(Level.DEBUG, "All ack ts={0} req={1} node={2}", inflight.ts(), traceId, id);
+                            if (err.get() > 0) {
+                                resFut.completeExceptionally(new Exception("Replication failure"));
+                            } else {
+                                resFut.complete(null);
+                            }
+
+                        } else {
+                            LOGGER.log(Level.DEBUG, "Ack ts={0} req={1} node={2}", inflight.ts(), traceId, id);
+                        }
+                    });
+                }
+            }
+        });
+
+        return resFut;
     }
 
     public void createReplicator(String grp, NodeId id) {

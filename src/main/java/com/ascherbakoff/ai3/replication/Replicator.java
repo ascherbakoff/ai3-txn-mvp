@@ -38,17 +38,10 @@ public class Replicator {
     }
 
     public Inflight send(Request request) {
-        Inflight inflight;
+        Inflight inflight = new Inflight(request.getTs());
+        inflights.put(inflight.ts, inflight);
 
-        synchronized (this) {
-            inflight = new Inflight(node.clock().now());
-            inflights.put(inflight.ts, inflight);
-            assert inflight == inflights.lastEntry().getValue(); // Must insert in ts order.
-        }
-
-        request.setTs(inflight.ts);
-
-        LOGGER.log(Level.DEBUG, "Send id={0}, curLwm={1}", request.getTs(), lwm);
+        LOGGER.log(Level.DEBUG, "Send id={0}, ts={1}, curLwm={2}", request.getId(), request.getTs(), lwm);
 
         client.send(nodeId, request).whenCompleteAsync(new BiConsumer<Response, Throwable>() {
             @Override
@@ -60,19 +53,13 @@ public class Replicator {
                 synchronized (Replicator.this) {
                     Set<Entry<Timestamp, Inflight>> set = inflights.entrySet();
 
-                    if (throwable == null) {
-                        inflight.future().complete(response);
-                    } else {
-                        inflight.future().completeExceptionally(throwable);
-                    }
-
                     Iterator<Entry<Timestamp, Inflight>> iter = set.iterator();
 
                     // Tail cleanup.
                     while (iter.hasNext()) {
                         Entry<Timestamp, Inflight> entry = iter.next();
 
-                        if (entry.getValue().future().isDone()) {
+                        if (entry.getValue().future().isDone() || entry.getValue() == inflight) {
                             iter.remove();
                             assert entry.getKey().compareTo(lwm) > 0;
                             lwm = entry.getKey(); // Adjust lwm.
@@ -86,6 +73,13 @@ public class Replicator {
                     // Adjust local LWM.
                     if (nodeId.equals(node.id())) {
                         node.group(grp).lwm = lwm;
+                    }
+
+                    // Complete after write.
+                    if (throwable == null) {
+                        inflight.future().complete(response);
+                    } else {
+                        inflight.future().completeExceptionally(throwable);
                     }
                 }
             }
@@ -111,6 +105,10 @@ public class Replicator {
 
     public int inflights() {
         return inflights.size();
+    }
+
+    public Inflight inflight(Timestamp ts) {
+        return inflights.get(ts);
     }
 
     public class Inflight {

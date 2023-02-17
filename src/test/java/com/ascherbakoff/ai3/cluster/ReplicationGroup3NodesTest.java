@@ -69,7 +69,7 @@ public class ReplicationGroup3NodesTest extends BasicTest {
         createCluster();
 
         Node leaseholder = top.getNode(leader);
-        leaseholder.replicate(GRP_NAME, new Put(0, 0)).future().join();
+        leaseholder.replicate(GRP_NAME, new Put(0, 0)).join();
 
         for (Node node : top.getNodeMap().values()) {
             assertTrue(waitForCondition(() -> {
@@ -96,7 +96,7 @@ public class ReplicationGroup3NodesTest extends BasicTest {
         while (msgCnt-- > 0) {
             senderPool.execute(() -> {
                 int val = gen.incrementAndGet();
-                top.getNode(leader).replicate(GRP_NAME, new Put(val, val)).future().exceptionally(err -> {
+                top.getNode(leader).replicate(GRP_NAME, new Put(val, val)).exceptionally(err -> {
                     errCnt.incrementAndGet();
                     LOGGER.log(Level.ERROR, "Failed to replicate", err);
                     return null;

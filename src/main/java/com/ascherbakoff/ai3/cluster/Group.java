@@ -6,6 +6,11 @@ import com.ascherbakoff.ai3.replication.Replicator;
 import com.ascherbakoff.ai3.table.MVKeyValueTable;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.Executor;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadFactory;
+import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 public class Group {
@@ -54,6 +59,15 @@ public class Group {
     public void setState(NodeId nodeId, State state) {
         nodeState.put(nodeId, state);
     }
+
+    public ExecutorService executorService = Executors.newSingleThreadExecutor(new ThreadFactory() {
+        @Override
+        public Thread newThread(@NotNull Runnable r) {
+            Thread thread = new Thread(r);
+            thread.setName(name + "-sender-thread");
+            return thread;
+        }
+    });
 
     @Override
     public boolean equals(Object o) {

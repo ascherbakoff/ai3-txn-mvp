@@ -82,4 +82,20 @@ public class RpcClient {
     public void block(Predicate<Request> pred) {
         this.blockPred = pred;
     }
+
+    public ArrayList<Request> blocked() {
+        ArrayList<Request> msgs = new ArrayList<>();
+
+        synchronized (this) {
+            Iterator<Object[]> iterator = blockedMsgs.iterator();
+
+            while (iterator.hasNext()) {
+                Object[] msg = iterator.next();
+
+                msgs.add((Request) msg[0]);
+            }
+        }
+
+        return msgs;
+    }
 }
