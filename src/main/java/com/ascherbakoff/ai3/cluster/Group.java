@@ -106,14 +106,11 @@ public class Group {
     }
 
     public boolean validLease(Timestamp at, NodeId leaseHolder) {
-        boolean validTs = lease != null && lease.compareTo(at) <= 0 && at.compareTo(lease.adjust(Tracker.LEASE_DURATION)) < 0;
-
-        if (!validTs)
+        if (!leaseHolder.equals(this.leaseHolder)) // Take into account the case of no leaseholder at all.
             return false;
 
-        if (!leaseHolder.equals(this.leaseHolder))
-            return false;
+        assert lease != null;
 
-        return true;
+        return lease.compareTo(at) <= 0 && at.compareTo(lease.adjust(Tracker.LEASE_DURATION)) < 0 ? true : false;
     }
 }

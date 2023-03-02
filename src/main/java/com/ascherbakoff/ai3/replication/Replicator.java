@@ -96,6 +96,10 @@ public class Replicator {
         return lwm;
     }
 
+    public void setLwm(Timestamp lwm) {
+        this.lwm = lwm;
+    }
+
     public CompletableFuture<Response> idleSync(Request r) {
         return client.send(nodeId, r).thenApply(response -> {
             node.clock().onResponse(response.getTs());

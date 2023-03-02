@@ -6,9 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.ascherbakoff.ai3.clock.Timestamp;
-import com.ascherbakoff.ai3.replication.Command;
 import com.ascherbakoff.ai3.replication.Put;
-import com.ascherbakoff.ai3.replication.Replicate;
 import com.ascherbakoff.ai3.replication.Replicator;
 import com.ascherbakoff.ai3.replication.Replicator.Inflight;
 import com.ascherbakoff.ai3.replication.Request;
@@ -22,7 +20,6 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.function.Predicate;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -75,26 +72,36 @@ public class ReplicationGroup2NodesTest extends BasicTest {
 
         Node leaseholder = top.getNode(leader);
         leaseholder.replicate(GRP_NAME, new Put(0, 0)).join();
+        validate(0);
+    }
 
-        assertEquals(0, top.getNode(leader).get(GRP_NAME, 0, top.getNode(alice).clock().get()));
-        assertEquals(0, top.getNode(leader).get(GRP_NAME, 0, top.getNode(bob).clock().get()));
+    @Test
+    public void testIdlePropagation() {
+        createCluster();
+
+        Node leaseholder = top.getNode(leader);
+        leaseholder.replicate(GRP_NAME, new Put(0, 0)).join();
+        adjustClocks(20);
+
+        validateAtTimestamp(0, clock.get());
     }
 
     @Test
     public void testLwmPropagation() {
         createCluster();
 
-        top.getNode(leader).replicate(GRP_NAME, new Put(0, 0)).join();
+        Node leaseholder = top.getNode(leader);
+        leaseholder.replicate(GRP_NAME, new Put(0, 0)).join();
 
-        Timestamp t2 = top.getNode(leader).group(GRP_NAME).replicators.get(leader).getLwm();
-        Timestamp t3 = top.getNode(leader).group(GRP_NAME).replicators.get(leader == alice ? bob : alice).getLwm();
+        Timestamp t2 = leaseholder.group(GRP_NAME).replicators.get(leader).getLwm();
+        Timestamp t3 = leaseholder.group(GRP_NAME).replicators.get(leader == alice ? bob : alice).getLwm();
         Timestamp t4 = top.getNode(alice).group(GRP_NAME).lwm;
         Timestamp t5 = top.getNode(bob).group(GRP_NAME).lwm;
 
         assertTrue(t2.compareTo(t4) == 0);
         assertTrue(t3.compareTo(t5) > 0);
 
-        top.getNode(leader).sync(GRP_NAME).join();
+        leaseholder.sync(GRP_NAME).join();
 
         Timestamp t6 = top.getNode(alice).group(GRP_NAME).lwm;
         Timestamp t7 = top.getNode(bob).group(GRP_NAME).lwm;
@@ -120,16 +127,16 @@ public class ReplicationGroup2NodesTest extends BasicTest {
         assertTrue(waitForCondition(() -> toBob.client().blocked().size() == 3, 1000));
         ArrayList<Request> blocked = toBob.client().blocked();
 
-        toBob.client().stopBlock(r -> r.getTs().equals(blocked.get(2).getTs()));
+        toBob.client().unblock(r -> r.getTs().equals(blocked.get(2).getTs()));
         assertTrue(waitForCondition(() -> toBob.inflight(blocked.get(2).getTs()).future().isDone(), 1000));
         assertEquals(t0, top.getNode(bob).group(GRP_NAME).lwm);
 
-        toBob.client().stopBlock(r -> r.getTs().equals(blocked.get(1).getTs()));
+        toBob.client().unblock(r -> r.getTs().equals(blocked.get(1).getTs()));
         assertTrue(waitForCondition(() -> toBob.inflight(blocked.get(1).getTs()).future().isDone(), 1000));
         assertEquals(t0, top.getNode(bob).group(GRP_NAME).lwm);
 
         Inflight inf = toBob.inflight(blocked.get(0).getTs());
-        toBob.client().stopBlock(r -> r.getTs().equals(blocked.get(0).getTs()));
+        toBob.client().unblock(r -> r.getTs().equals(blocked.get(0).getTs()));
         assertTrue(waitForCondition(() -> inf.future().isDone(), 1000));
         assertEquals(t0, top.getNode(bob).group(GRP_NAME).lwm);
 
@@ -171,7 +178,7 @@ public class ReplicationGroup2NodesTest extends BasicTest {
 
         assertEquals(t0, top.getNode(bob).group(GRP_NAME).lwm);
 
-        toBob.client().stopBlock(r -> r.getTs().equals(blocked.get(0).getTs()));
+        toBob.client().unblock(r -> r.getTs().equals(blocked.get(0).getTs()));
         toBob.inflight(blocked.get(0).getTs()).future().join();
         assertEquals(t0, top.getNode(bob).group(GRP_NAME).lwm); // LWM was not propagated by subsequent message.
 
@@ -181,12 +188,12 @@ public class ReplicationGroup2NodesTest extends BasicTest {
         ArrayList<Request> blocked2 = toBob.client().blocked();
 
         Inflight i2 = toBob.inflight(blocked2.get(1).getTs());
-        toBob.client().stopBlock(r -> r.getTs().equals(i2.ts()));
+        toBob.client().unblock(r -> r.getTs().equals(i2.ts()));
         assertTrue(waitForCondition(() -> i2.future().isDone(), 1000));
         assertEquals(blocked.get(0).getTs(), top.getNode(bob).group(GRP_NAME).lwm);
 
         Inflight i1 = toBob.inflight(blocked2.get(0).getTs());
-        toBob.client().stopBlock(r -> r.getTs().equals(blocked2.get(0).getTs()));
+        toBob.client().unblock(r -> r.getTs().equals(blocked2.get(0).getTs()));
         assertTrue(waitForCondition(() -> i1.future().isDone(), 1000));
         assertEquals(blocked.get(0).getTs(), top.getNode(bob).group(GRP_NAME).lwm);
 
@@ -260,7 +267,7 @@ public class ReplicationGroup2NodesTest extends BasicTest {
     public void testOutdatedReplication() {
         createCluster();
 
-        Node leaseholder = top.getNode(alice);
+        Node leaseholder = top.getNode(leader);
         int val = 0;
         leaseholder.replicate(GRP_NAME, new Put(val, val)).join();
         validate(val);
@@ -273,23 +280,16 @@ public class ReplicationGroup2NodesTest extends BasicTest {
 
         val++;
         Replicator toBob = leaseholder.group(GRP_NAME).replicators.get(bob);
-        int finalVal = val;
-        Predicate<Request> pred = r -> {
-            Command payload = r.getPayload();
-            if (payload instanceof Replicate) {
-                Put put = (Put) ((Replicate) payload).getData();
-                return put.getKey() == finalVal;
-            }
-            return false;
-        };
-        toBob.client().block(pred);
+        toBob.client().block(r -> true);
 
         CompletableFuture<Void> fut = leaseholder.replicate(GRP_NAME, new Put(val, val));
         assertFalse(fut.isDone());
 
+        assertTrue(waitForCondition(() -> toBob.client().blocked().size() == 1, 1_000));
+
         adjustClocks(Tracker.LEASE_DURATION / 2);
 
-        toBob.client().stopBlock(pred);
+        toBob.client().unblock(r -> true);
 
         assertThrows(CompletionException.class, () -> fut.join());
     }
@@ -298,7 +298,7 @@ public class ReplicationGroup2NodesTest extends BasicTest {
     public void testOutdatedReplication2() throws InterruptedException {
         createCluster();
 
-        Node leaseholder = top.getNode(alice);
+        Node leaseholder = top.getNode(leader);
         int val = 0;
         leaseholder.replicate(GRP_NAME, new Put(val, val)).join();
         validate(val);
@@ -311,19 +311,12 @@ public class ReplicationGroup2NodesTest extends BasicTest {
 
         val++;
         Replicator toBob = leaseholder.group(GRP_NAME).replicators.get(bob);
-        int finalVal = val;
-        Predicate<Request> pred = r -> {
-            Command payload = r.getPayload();
-            if (payload instanceof Replicate) {
-                Put put = (Put) ((Replicate) payload).getData();
-                return put.getKey() == finalVal;
-            }
-            return false;
-        };
-        toBob.client().block(pred);
+        toBob.client().block(r -> true);
 
         CompletableFuture<Void> fut = leaseholder.replicate(GRP_NAME, new Put(val, val));
         assertFalse(fut.isDone());
+
+        assertTrue(waitForCondition(() -> toBob.client().blocked().size() == 1, 1_000));
 
         adjustClocks(Tracker.LEASE_DURATION / 2 + Tracker.MAX_CLOCK_SKEW);
 
@@ -331,7 +324,7 @@ public class ReplicationGroup2NodesTest extends BasicTest {
         assertTrue(tracker.assignLeaseholder(GRP_NAME, bob));
         waitLeaseholder(bob);
 
-        toBob.client().stopBlock(pred);
+        toBob.client().unblock(r -> true);
 
         assertThrows(CompletionException.class, () -> fut.join());
     }
@@ -342,8 +335,17 @@ public class ReplicationGroup2NodesTest extends BasicTest {
     }
 
     private void validate(int val) {
-        assertEquals(val, top.getNode(alice).get(GRP_NAME, val, top.getNode(alice).clock().get()));
-        assertEquals(val, top.getNode(bob).get(GRP_NAME, val, top.getNode(bob).clock().get()));
+        Node leaseholder = top.getNode(leader);
+        leaseholder.sync(GRP_NAME).join();
+        assertEquals(val, top.getNode(leader).localGet(GRP_NAME, val, top.getNode(alice).group(GRP_NAME).lwm));
+        assertEquals(val, top.getNode(leader).localGet(GRP_NAME, val, top.getNode(bob).group(GRP_NAME).lwm));
+    }
+
+    private void validateAtTimestamp(int val, Timestamp ts) {
+        Node leaseholder = top.getNode(leader);
+        leaseholder.sync(GRP_NAME).join();
+        assertEquals(val, top.getNode(leader).localGet(GRP_NAME, val, ts));
+        assertEquals(val, top.getNode(leader).localGet(GRP_NAME, val, ts));
     }
 
     @Test

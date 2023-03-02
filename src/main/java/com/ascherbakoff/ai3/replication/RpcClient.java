@@ -51,7 +51,7 @@ public class RpcClient {
         return node.accept(request);
     }
 
-    public void stopBlock(Predicate<Request> pred) {
+    public void unblock(Predicate<Request> pred) {
         ArrayList<Object[]> msgs = new ArrayList<>();
 
         synchronized (this) {

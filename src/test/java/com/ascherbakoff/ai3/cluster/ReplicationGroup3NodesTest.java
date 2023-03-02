@@ -73,7 +73,7 @@ public class ReplicationGroup3NodesTest extends BasicTest {
 
         for (Node node : top.getNodeMap().values()) {
             assertTrue(waitForCondition(() -> {
-                Integer val = node.get(GRP_NAME, 0, node.clock().get());
+                Integer val = node.localGet(GRP_NAME, 0, node.clock().get());
                 return val != null && 0 == val.intValue();
             }, 1_000));
         }
@@ -127,7 +127,7 @@ public class ReplicationGroup3NodesTest extends BasicTest {
 
         for (int i = 0; i < msgCnt; i++) {
             for (Node node : top.getNodeMap().values()) {
-                assertEquals(i, node.get(GRP_NAME, i, node.group(GRP_NAME).lwm));
+                assertEquals(i, node.localGet(GRP_NAME, i, node.group(GRP_NAME).lwm));
             }
         }
     }

@@ -28,7 +28,7 @@ public class VersionChainRowStore<T> implements RowStore<VersionChain<T>, T> {
 
     @Override
     public VersionChain<T> insert(T newRow, UUID txId) {
-        VersionChain<T> head = new VersionChain<>(txId, null, null, newRow, null);
+        VersionChain<T> head = new VersionChain<>(txId, null, null, newRow);
         heads.add(head);
         return head;
     }

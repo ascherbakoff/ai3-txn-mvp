@@ -143,5 +143,37 @@ public class VersionChainRowStoreTest extends BasicTest {
         assertNotNull(rowId);
         assertEquals(t1, store.get(rowId, txId1, null));
     }
+
+    @Test
+    public void testGC() {
+        Tuple t1 = Tuple.create("name", "id@some.org");
+        int gen = 0;
+        UUID txId0 = new UUID(0, gen++);
+
+        VersionChain<Tuple> rowId = store.insert(t1, txId0);
+        assertNotNull(rowId);
+        assertEquals(t1, store.get(rowId, txId0, null));
+
+        store.commitWrite(rowId, clock.now(), txId0);
+
+        for (int i = 1; i < 100; i++) {
+            UUID txId = new UUID(0, gen++);
+            Tuple t = Tuple.create("name" + i, "id@some.org");
+            assertEquals(t1, store.update(rowId, t, txId));
+            store.commitWrite(rowId, clock.now(), txId);
+            t1 = t;
+        }
+
+        VersionChain<Tuple> c = rowId;
+        int cnt = 0;
+        for (int i = 99; i > 99 - VersionChain.MAX_ALLOWED; i--) {
+            assertEquals(Tuple.create("name" + i, "id@some.org"), c.value);
+            c = c.next;
+            cnt++;
+        }
+
+        assertEquals(VersionChain.MAX_ALLOWED, cnt);
+        assertNull(c);
+    }
 }
 

@@ -7,19 +7,22 @@ import java.util.function.Predicate;
 import org.jetbrains.annotations.Nullable;
 
 class VersionChain<T> {
+    public static final int MAX_ALLOWED = 10;
     @Nullable Timestamp begin;
     @Nullable Timestamp end;
     T value;
     @Nullable
     UUID txId; // Lock holder for uncommitted version.
     @Nullable VersionChain<T> next;
+    @Nullable VersionChain<T> prev;
+    @Nullable VersionChain<T> last; // TODO makes sense only for chain head.
+    private int cnt = 1; // TODO makes sense only for chain head.
 
-    VersionChain(UUID txId, @Nullable Timestamp begin, @Nullable Timestamp end, @Nullable T value, @Nullable VersionChain<T> next) {
+    VersionChain(UUID txId, @Nullable Timestamp begin, @Nullable Timestamp end, @Nullable T value) {
         this.txId = txId;
         this.begin = begin;
         this.end = end;
         this.value = value;
-        this.next = next;
     }
 
     private @Nullable Timestamp getBegin() {
@@ -52,6 +55,22 @@ class VersionChain<T> {
 
     private void setNext(@Nullable VersionChain<T> next) {
         this.next = next;
+    }
+
+    private VersionChain<T> getPrev() {
+        return prev;
+    }
+
+    private void setPrev(@Nullable VersionChain<T> prev) {
+        this.prev = prev;
+    }
+
+    private VersionChain<T> getLast() {
+        return last;
+    }
+
+    private void setLast(@Nullable VersionChain<T> last) {
+        this.last = last;
     }
 
     private UUID getTxId() {
@@ -114,12 +133,30 @@ class VersionChain<T> {
         T oldVal = this.value;
 
         // Re-link.
-        VersionChain<T> next0 = new VersionChain<>(txId, begin, end, value, next);
+        VersionChain<T> next0 = new VersionChain<>(txId, begin, end, value);
+        if (next != null)
+            next.setPrev(next0);
+        next0.setNext(next);
+        next0.setPrev(this);
         setTxId(txId);
         setBegin(null);
         setEnd(null);
         setValue(val);
         setNext(next0);
+
+        cnt++;
+
+        if (cnt == 2) {
+            setLast(next0);
+        }
+
+        // Cut tail.
+        if (cnt > MAX_ALLOWED) {
+            VersionChain<T> tail = getLast().getPrev();
+            setLast(tail);
+            tail.setNext(null);
+            cnt--;
+        }
 
         return oldVal;
     }
