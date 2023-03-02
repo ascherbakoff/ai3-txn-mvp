@@ -50,38 +50,41 @@ public class Replicator {
 
                 node.clock().onResponse(response.getTs());
 
-                synchronized (Replicator.this) {
-                    Set<Entry<Timestamp, Inflight>> set = inflights.entrySet();
+                node.group(grp).executorService.submit(new Runnable() {
+                    @Override
+                    public void run() {
+                        Set<Entry<Timestamp, Inflight>> set = inflights.entrySet();
 
-                    Iterator<Entry<Timestamp, Inflight>> iter = set.iterator();
+                        Iterator<Entry<Timestamp, Inflight>> iter = set.iterator();
 
-                    // Tail cleanup.
-                    while (iter.hasNext()) {
-                        Entry<Timestamp, Inflight> entry = iter.next();
+                        // Tail cleanup.
+                        while (iter.hasNext()) {
+                            Entry<Timestamp, Inflight> entry = iter.next();
 
-                        if (entry.getValue().future().isDone() || entry.getValue() == inflight) {
-                            iter.remove();
-                            assert entry.getKey().compareTo(lwm) > 0;
-                            lwm = entry.getKey(); // Adjust lwm.
+                            if (entry.getValue().future().isDone() || entry.getValue() == inflight) {
+                                iter.remove();
+                                assert entry.getKey().compareTo(lwm) > 0;
+                                lwm = entry.getKey(); // Adjust lwm.
 
-                            LOGGER.log(Level.DEBUG, "OnRemove id={0}, lwm={1}", request.getTs(), lwm);
+                                LOGGER.log(Level.DEBUG, "OnRemove id={0}, lwm={1}", request.getTs(), lwm);
+                            } else {
+                                break;
+                            }
+                        }
+
+                        // Adjust local LWM.
+                        if (nodeId.equals(node.id())) {
+                            node.group(grp).lwm = lwm;
+                        }
+
+                        // Complete after write.
+                        if (throwable == null) {
+                            inflight.future().complete(response);
                         } else {
-                            break;
+                            inflight.future().completeExceptionally(throwable);
                         }
                     }
-
-                    // Adjust local LWM.
-                    if (nodeId.equals(node.id())) {
-                        node.group(grp).lwm = lwm;
-                    }
-
-                    // Complete after write.
-                    if (throwable == null) {
-                        inflight.future().complete(response);
-                    } else {
-                        inflight.future().completeExceptionally(throwable);
-                    }
-                }
+                });
             }
         });
 
