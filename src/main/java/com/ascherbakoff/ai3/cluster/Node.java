@@ -231,7 +231,8 @@ public class Node {
             public void run() {
                 Set<NodeId> nodeIds = group.getNodeState().keySet();
 
-                AtomicInteger majority = new AtomicInteger(0);
+                AtomicInteger responded = new AtomicInteger(0);
+                AtomicInteger err = new AtomicInteger(0);
                 AtomicBoolean localDone = new AtomicBoolean();
 
                 UUID traceId = UUID.randomUUID();
@@ -257,20 +258,28 @@ public class Node {
                             return; // Ignore response for a completed future.
                         }
 
-                        if (resp.getReturn() != 0) {
-                            resFut.completeExceptionally(new Exception("Replication failure: code=" + resp.getReturn()));
-                            return;
-                        }
+                        int maj = nodeIds.size() / 2 + 1;
 
-                        int val = majority.incrementAndGet();
+                        responded.incrementAndGet();
+
+                        if (resp.getReturn() != 0) {
+                            // TODO invalidate replicator.
+                            err.incrementAndGet();
+                        }
 
                         if (id.equals(Node.this.nodeId))
                             localDone.set(true);
 
-                        // Need both majority and local completion.
-                        if (val >= nodeIds.size() / 2 + 1 && localDone.get()) {
-                            LOGGER.log(Level.DEBUG, "All ack ts={0} req={1} node={2}", inflight.ts(), traceId, id);
-                            resFut.complete(null);
+                        if (responded.get() >= nodeIds.size() / 2 + 1) {
+                            if (err.get() > nodeIds.size() - maj) {
+                                LOGGER.log(Level.DEBUG, "Err ack ts={0} req={1} node={2}", inflight.ts(), traceId, id);
+                                resFut.completeExceptionally(new Exception("Replication failure"));
+                            } else if (localDone.get()) { // Needs local completion.
+                                LOGGER.log(Level.DEBUG, "Ok ack ts={0} req={1} node={2}", inflight.ts(), traceId, id);
+                                resFut.complete(null);
+                            } else {
+                                LOGGER.log(Level.DEBUG, "Ack ts={0} req={1} node={2}", inflight.ts(), traceId, id);
+                            }
                         } else {
                             LOGGER.log(Level.DEBUG, "Ack ts={0} req={1} node={2}", inflight.ts(), traceId, id);
                         }

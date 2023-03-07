@@ -114,11 +114,8 @@ public class ReplicationGroup2NodesTest extends BasicTest {
 
         leaseholder.sync(GRP_NAME).join();
 
-        Timestamp t6 = top.getNode(alice).group(GRP_NAME).lwm;
-        Timestamp t7 = top.getNode(bob).group(GRP_NAME).lwm;
-
-        assertTrue(t2.compareTo(t6) == 0);
-        assertTrue(t3.compareTo(t7) == 0);
+        assertEquals(leaseholder.group(GRP_NAME).replicators.get(alice).getLwm(), top.getNode(alice).group(GRP_NAME).lwm);
+        assertEquals(leaseholder.group(GRP_NAME).replicators.get(bob).getLwm(), top.getNode(bob).group(GRP_NAME).lwm);
     }
 
     @Test
@@ -378,7 +375,7 @@ public class ReplicationGroup2NodesTest extends BasicTest {
 
         toBob.client().unblock(r -> true);
 
-        fut.join();
+        assertThrows(CompletionException.class, () -> fut.join());
     }
 
     /**
