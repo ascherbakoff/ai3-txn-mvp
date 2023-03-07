@@ -2,8 +2,10 @@ package com.ascherbakoff.ai3.cluster;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 
 import com.ascherbakoff.ai3.clock.Timestamp;
 import com.ascherbakoff.ai3.replication.Put;
@@ -20,6 +22,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Predicate;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -61,8 +64,16 @@ public class ReplicationGroup2NodesTest extends BasicTest {
     private void waitLeaseholder(NodeId nodeId) {
         assertEquals(nodeId, tracker.getLeaseHolder(GRP_NAME));
 
+        Timestamp ts = tracker.clock().get();
+
         for (Node node : top.getNodeMap().values()) {
-            assertTrue(waitForCondition(() -> nodeId.equals(node.getLeaseHolder(GRP_NAME)), 1_000));
+            assertTrue(waitForCondition(() -> {
+                NodeId leaseHolder = node.getLeaseHolder(GRP_NAME);
+                Timestamp lease = node.getLease(GRP_NAME);
+                if (leaseHolder == null || lease == null)
+                    return false;
+                return nodeId.equals(leaseHolder) && ts.compareTo(lease) >= 0;
+            }, 1_000));
         }
     }
 
@@ -329,9 +340,97 @@ public class ReplicationGroup2NodesTest extends BasicTest {
         assertThrows(CompletionException.class, () -> fut.join());
     }
 
+    /**
+     * 1. One of replication messages is delayed until it's epoch is expired (the epoch corresponds to a lease duration of the initiating node).
+     * <p>2. After expiration message is delivered.
+     * <p>Expected result: operation is failed.
+     * Note: this outcome seems ok, because the lease is refreshed each LEASE_DURATION / 2 and the message RTT should typically be much less.
+     */
+    @Test
+    public void testOutdatedReplication3() {
+        createCluster();
+
+        Node leaseholder = top.getNode(leader);
+        Timestamp oldLease = tracker.getLease(GRP_NAME);
+        assertNotNull(oldLease);
+        int val = 0;
+        leaseholder.replicate(GRP_NAME, new Put(val, val)).join(); // Init replicators.
+
+        Replicator toBob = leaseholder.group(GRP_NAME).replicators.get(bob);
+        toBob.client().block(new Predicate<Request>() {
+            @Override
+            public boolean test(Request request) {
+                return request.getTs().physical() < Tracker.LEASE_DURATION / 2;
+            }
+        });
+
+        val++;
+        CompletableFuture<Void> fut = leaseholder.replicate(GRP_NAME, new Put(val, val));
+        assertTrue(waitForCondition(() -> toBob.client().blocked().size() == 1, 1_000));
+        assertFalse(fut.isDone());
+
+        adjustClocks(Tracker.LEASE_DURATION / 2);
+
+        tracker.refreshLeaseholder(GRP_NAME);
+        waitLeaseholder(leader);
+
+        adjustClocks(Tracker.LEASE_DURATION / 2 + Tracker.MAX_CLOCK_SKEW);
+
+        toBob.client().unblock(r -> true);
+
+        fut.join();
+    }
+
+    /**
+     * 1. One of replication messages is delayed infinitely.
+     * <p>2. Next replication command is issued, leaving the gap on one of replicatros.
+     * <p>Expected result: operation is failed after some timeout, closing the gap.
+     * Note: not closing gaps leads to prevention of safeTime propagation.
+     */
+    @Test
+    public void testClosedGaps() throws Exception {
+        createCluster();
+
+        Node leaseholder = top.getNode(leader);
+        Timestamp oldLease = tracker.getLease(GRP_NAME);
+        assertNotNull(oldLease);
+        int val = 0;
+        leaseholder.replicate(GRP_NAME, new Put(val, val)).join(); // Init replicators.
+
+        Replicator toBob = leaseholder.group(GRP_NAME).replicators.get(bob);
+        toBob.client().block(new Predicate<Request>() {
+            @Override
+            public boolean test(Request request) {
+                return request.getTs().physical() < Tracker.LEASE_DURATION / 2;
+            }
+        });
+
+        val++;
+        CompletableFuture<Void> fut = leaseholder.replicate(GRP_NAME, new Put(val, val));
+        assertTrue(waitForCondition(() -> toBob.client().blocked().size() == 1, 1_000));
+        assertFalse(fut.isDone());
+
+        assertThrows(CompletionException.class, () -> fut.join());
+    }
+
+    /**
+     * 1. One of replication messages is delayed infinitely.
+     * <p>2. Many replication commands are issued, causing inflights overflow.
+     * <p>Expected result: on overflow the replicator wents to error state, preventing any replication activity.
+     * The correposnding node must be restarted to re-create replicator and perform catch-up.
+     * Note: the same behavior must be applied on replication command uncaught exception.
+     */
+    @Test
+    public void testReplicatorError() {
+        fail();
+    }
+
+    /**
+     * Tests if a message containing illegal ts value (in the future) is ignored.
+     */
     @Test
     public void testBrokenClocks() {
-        // TODO
+        fail();
     }
 
     private void validate(int val) {
@@ -346,10 +445,5 @@ public class ReplicationGroup2NodesTest extends BasicTest {
         leaseholder.sync(GRP_NAME).join();
         assertEquals(val, top.getNode(leader).localGet(GRP_NAME, val, ts));
         assertEquals(val, top.getNode(leader).localGet(GRP_NAME, val, ts));
-    }
-
-    @Test
-    public void testClosedGaps() {
-
     }
 }

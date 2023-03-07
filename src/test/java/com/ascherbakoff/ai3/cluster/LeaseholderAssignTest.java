@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 
 import com.ascherbakoff.ai3.clock.Timestamp;
 import com.ascherbakoff.ai3.util.BasicTest;
@@ -194,5 +195,13 @@ public class LeaseholderAssignTest extends BasicTest {
     @Test
     public void testScenario4() {
 
+    }
+
+    /**
+     * Tests replication group size change.
+     */
+    @Test
+    public void testReconfiguration() {
+        fail();
     }
 }

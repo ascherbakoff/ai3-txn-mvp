@@ -20,11 +20,14 @@ import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.jetbrains.annotations.Nullable;
 
 public class Node {
+    public static final int TIMEOUT_SEC = 1;
+
     private static System.Logger LOGGER = System.getLogger(Node.class.getName());
 
 //    static {
@@ -220,7 +223,7 @@ public class Node {
             return CompletableFuture.failedFuture(new IllegalStateException("Illegal lease"));
         }
 
-        CompletableFuture<Void> resFut = new CompletableFuture<>();
+        CompletableFuture<Void> resFut = new CompletableFuture<Void>().orTimeout(TIMEOUT_SEC, TimeUnit.SECONDS);
 
         // TODO implement batching by concatenating queue elements into single message.
         group.executorService.submit(new Runnable() {
@@ -229,7 +232,6 @@ public class Node {
                 Set<NodeId> nodeIds = group.getNodeState().keySet();
 
                 AtomicInteger majority = new AtomicInteger(0);
-                AtomicInteger err = new AtomicInteger(0);
                 AtomicBoolean localDone = new AtomicBoolean();
 
                 UUID traceId = UUID.randomUUID();
@@ -251,10 +253,16 @@ public class Node {
                     Inflight inflight = replicator.send(request);
 
                     inflight.future().thenAccept(resp -> {
-                        int val = majority.incrementAndGet();
+                        if (resFut.isDone()) {
+                            return; // Ignore response for a completed future.
+                        }
 
-                        if (resp.getReturn() != 0)
-                            err.incrementAndGet();
+                        if (resp.getReturn() != 0) {
+                            resFut.completeExceptionally(new Exception("Replication failure: code=" + resp.getReturn()));
+                            return;
+                        }
+
+                        int val = majority.incrementAndGet();
 
                         if (id.equals(Node.this.nodeId))
                             localDone.set(true);
@@ -262,12 +270,7 @@ public class Node {
                         // Need both majority and local completion.
                         if (val >= nodeIds.size() / 2 + 1 && localDone.get()) {
                             LOGGER.log(Level.DEBUG, "All ack ts={0} req={1} node={2}", inflight.ts(), traceId, id);
-                            if (err.get() > 0) {
-                                resFut.completeExceptionally(new Exception("Replication failure"));
-                            } else {
-                                resFut.complete(null);
-                            }
-
+                            resFut.complete(null);
                         } else {
                             LOGGER.log(Level.DEBUG, "Ack ts={0} req={1} node={2}", inflight.ts(), traceId, id);
                         }
