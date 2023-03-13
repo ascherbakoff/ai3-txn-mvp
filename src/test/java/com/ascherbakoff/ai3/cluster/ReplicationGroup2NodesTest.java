@@ -9,6 +9,7 @@ import static org.junit.jupiter.api.Assertions.fail;
 
 import com.ascherbakoff.ai3.clock.Timestamp;
 import com.ascherbakoff.ai3.replication.Put;
+import com.ascherbakoff.ai3.replication.Replicate;
 import com.ascherbakoff.ai3.replication.Replicator;
 import com.ascherbakoff.ai3.replication.Replicator.Inflight;
 import com.ascherbakoff.ai3.replication.Request;
@@ -22,7 +23,6 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.function.Predicate;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -161,10 +161,7 @@ public class ReplicationGroup2NodesTest extends BasicTest {
         toBob.client().clearBlock();
         top.getNode(alice).sync(GRP_NAME).join();
 
-        Timestamp t3 = top.getNode(bob).group(GRP_NAME).lwm;
-
-        assertEquals(t, t3);
-
+        assertEquals(top.getNode(alice).group(GRP_NAME).replicators.get(bob).getLwm(), top.getNode(bob).group(GRP_NAME).lwm);
         assertEquals(top.getNode(alice).group(GRP_NAME).replicators.get(alice).getLwm(), top.getNode(alice).group(GRP_NAME).lwm);
     }
 
@@ -218,10 +215,7 @@ public class ReplicationGroup2NodesTest extends BasicTest {
         toBob.client().clearBlock();
         top.getNode(alice).sync(GRP_NAME).join();
 
-        Timestamp t3 = top.getNode(bob).group(GRP_NAME).lwm;
-
-        assertEquals(t, t3);
-
+        assertEquals(top.getNode(alice).group(GRP_NAME).replicators.get(bob).getLwm(), top.getNode(bob).group(GRP_NAME).lwm);
         assertEquals(top.getNode(alice).group(GRP_NAME).replicators.get(alice).getLwm(), top.getNode(alice).group(GRP_NAME).lwm);
     }
 
@@ -354,12 +348,7 @@ public class ReplicationGroup2NodesTest extends BasicTest {
         leaseholder.replicate(GRP_NAME, new Put(val, val)).join(); // Init replicators.
 
         Replicator toBob = leaseholder.group(GRP_NAME).replicators.get(bob);
-        toBob.client().block(new Predicate<Request>() {
-            @Override
-            public boolean test(Request request) {
-                return request.getTs().physical() < Tracker.LEASE_DURATION / 2;
-            }
-        });
+        toBob.client().block(request -> request.getTs().physical() < Tracker.LEASE_DURATION / 2);
 
         val++;
         CompletableFuture<Void> fut = leaseholder.replicate(GRP_NAME, new Put(val, val));
@@ -380,8 +369,7 @@ public class ReplicationGroup2NodesTest extends BasicTest {
 
     /**
      * 1. One of replication messages is delayed infinitely.
-     * <p>2. Next replication command is issued, leaving the gap on one of replicatros.
-     * <p>Expected result: operation is failed after some timeout, closing the gap.
+     * <p>Expected result: operation is failed after some timeout, closing the gap on all replicators.
      * Note: not closing gaps leads to prevention of safeTime propagation.
      */
     @Test
@@ -394,20 +382,41 @@ public class ReplicationGroup2NodesTest extends BasicTest {
         int val = 0;
         leaseholder.replicate(GRP_NAME, new Put(val, val)).join(); // Init replicators.
 
+        leaseholder.sync(GRP_NAME).join();
+
         Replicator toBob = leaseholder.group(GRP_NAME).replicators.get(bob);
-        toBob.client().block(new Predicate<Request>() {
-            @Override
-            public boolean test(Request request) {
-                return request.getTs().physical() < Tracker.LEASE_DURATION / 2;
-            }
-        });
+        toBob.client().block(request -> request.getPayload() instanceof Replicate);
 
         val++;
         CompletableFuture<Void> fut = leaseholder.replicate(GRP_NAME, new Put(val, val));
         assertTrue(waitForCondition(() -> toBob.client().blocked().size() == 1, 1_000));
         assertFalse(fut.isDone());
 
+        Thread.sleep(200); // Give time to finish for alice->alice replication.
+
+        // LWM shoudn't propagate for alice->bob until infligh is not completed.
+        leaseholder.sync(GRP_NAME).join();
+
+        Timestamp t0 = top.getNode(alice).group(GRP_NAME).replicators.get(alice).getLwm();
+        Timestamp t1 = top.getNode(alice).group(GRP_NAME).lwm;
+        assertEquals(t0, t1);
+        Timestamp t2 = top.getNode(alice).group(GRP_NAME).replicators.get(bob).getLwm();
+        Timestamp t3 = top.getNode(bob).group(GRP_NAME).lwm;
+        assertEquals(t2, t3);
+        assertTrue(t0.compareTo(t2) > 0);
+        assertTrue(t1.compareTo(t3) > 0);
+
         assertThrows(CompletionException.class, () -> fut.join());
+
+        leaseholder.sync(GRP_NAME).join();
+
+        t0 = top.getNode(alice).group(GRP_NAME).replicators.get(alice).getLwm();
+        t1 = top.getNode(alice).group(GRP_NAME).lwm;
+        t2 = top.getNode(alice).group(GRP_NAME).replicators.get(bob).getLwm();
+        t3 = top.getNode(bob).group(GRP_NAME).lwm;
+        assertEquals(t0, t1);
+        assertEquals(t1, t2);
+        assertEquals(t2, t3);
     }
 
     /**
@@ -418,7 +427,22 @@ public class ReplicationGroup2NodesTest extends BasicTest {
      * Note: the same behavior must be applied on replication command uncaught exception.
      */
     @Test
-    public void testReplicatorError() {
+    public void testReplicatorErrorOnOverflow() {
+        fail();
+    }
+
+    @Test
+    public void testReplicatorErrorOnTimeout() {
+        fail();
+    }
+
+    @Test
+    public void testReplicatorErrorOnBadResponse() {
+        fail();
+    }
+
+    @Test
+    public void testGroupInErrorStateCannotBecomeLeader() {
         fail();
     }
 

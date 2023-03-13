@@ -10,9 +10,11 @@ import java.util.Map.Entry;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.concurrent.CompletableFuture;
-import java.util.function.BiConsumer;
+import java.util.concurrent.TimeUnit;
 
 public class Replicator {
+    public static final int TIMEOUT_SEC = 1;
+
     private static System.Logger LOGGER = System.getLogger(Replicator.class.getName());
 
     private final Node node;
@@ -38,57 +40,47 @@ public class Replicator {
     }
 
     public Inflight send(Request request) {
-        Inflight inflight = new Inflight(request.getTs());
+        CompletableFuture<Response> ioFut = client.send(nodeId, request).orTimeout(TIMEOUT_SEC, TimeUnit.SECONDS);
+
+        Inflight inflight = new Inflight(request.getTs(), ioFut, this);
         inflights.put(inflight.ts, inflight);
 
         LOGGER.log(Level.DEBUG, "Send id={0}, ts={1}, curLwm={2}", request.getId(), request.getTs(), lwm);
 
-        client.send(nodeId, request).whenCompleteAsync(new BiConsumer<Response, Throwable>() {
-            @Override
-            public void accept(Response response, Throwable throwable) {
-                LOGGER.log(Level.DEBUG, "Resp node=" + nodeId + " id=" + request.getId());
-
-                node.clock().onResponse(response.getTs());
-
-                node.group(grp).executorService.submit(new Runnable() {
-                    @Override
-                    public void run() {
-                        Set<Entry<Timestamp, Inflight>> set = inflights.entrySet();
-
-                        Iterator<Entry<Timestamp, Inflight>> iter = set.iterator();
-
-                        // Tail cleanup.
-                        while (iter.hasNext()) {
-                            Entry<Timestamp, Inflight> entry = iter.next();
-
-                            if (entry.getValue().future().isDone() || entry.getValue() == inflight) {
-                                iter.remove();
-                                assert entry.getKey().compareTo(lwm) > 0;
-                                lwm = entry.getKey(); // Adjust lwm.
-
-                                LOGGER.log(Level.DEBUG, "OnRemove id={0}, lwm={1}", request.getTs(), lwm);
-                            } else {
-                                break;
-                            }
-                        }
-
-                        // Adjust local LWM.
-                        if (nodeId.equals(node.id())) {
-                            node.group(grp).lwm = lwm;
-                        }
-
-                        // Complete after write.
-                        if (throwable == null) {
-                            inflight.future().complete(response);
-                        } else {
-                            inflight.future().completeExceptionally(throwable);
-                        }
-                    }
-                });
-            }
-        });
-
         return inflight;
+    }
+
+    public void finish(Inflight inflight) {
+        Set<Entry<Timestamp, Inflight>> set = inflights.entrySet();
+
+        Iterator<Entry<Timestamp, Inflight>> iter = set.iterator();
+
+        // Tail cleanup.
+        while (iter.hasNext()) {
+            Entry<Timestamp, Inflight> entry = iter.next();
+
+            if (entry.getValue().future().isDone() || entry.getValue() == inflight) {
+                if (entry.getValue().error()) {
+                    break; // Break chain processing.
+                }
+
+                iter.remove();
+                assert entry.getKey().compareTo(lwm) > 0;
+                lwm = entry.getKey(); // Adjust lwm.
+
+                LOGGER.log(Level.DEBUG, "OnRemove id={0}, lwm={1}", inflight.ts, lwm);
+            } else {
+                break;
+            }
+        }
+
+        // Adjust local LWM.
+        if (nodeId.equals(node.id())) {
+            node.group(grp).lwm = lwm;
+        }
+
+        // Complete after write.
+        inflight.future().complete(null);
     }
 
     public RpcClient client() {
@@ -120,19 +112,23 @@ public class Replicator {
 
     public class Inflight {
         private final Timestamp ts;
-        private final CompletableFuture<Response> fut = new CompletableFuture<>();
-        private Response done;
+        private final CompletableFuture<Void> fut = new CompletableFuture<>();
+        private final CompletableFuture<Response> ioFuture;
+        private final Replicator replicator;
+        private boolean error = false;
 
-        Inflight(Timestamp now) {
+        Inflight(Timestamp now, CompletableFuture<Response> ioFut, Replicator replicator) {
             this.ts = now;
+            this.ioFuture = ioFut;
+            this.replicator = replicator;
         }
 
-        public void setDone(Response done) {
-            fut.complete(done);
-        }
-
-        public CompletableFuture<Response> future() {
+        public CompletableFuture<Void> future() {
             return fut;
+        }
+
+        public CompletableFuture<Response> ioFuture() {
+            return ioFuture;
         }
 
         public Timestamp ts() {
@@ -143,8 +139,22 @@ public class Replicator {
         public String toString() {
             return "Inflight{" +
                     "ts=" + ts +
+                    "err=" + error +
                     ", isDone=" + fut.isDone() +
                     '}';
+        }
+
+        public void finish(boolean err) {
+            if (fut.isDone())
+                return;
+
+            error = err;
+
+            replicator.finish(this);
+        }
+
+        public boolean error() {
+            return error;
         }
     }
 }

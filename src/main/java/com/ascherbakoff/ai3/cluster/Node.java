@@ -21,13 +21,12 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.jetbrains.annotations.Nullable;
 
 public class Node {
-    public static final int TIMEOUT_SEC = 1;
-
     private static System.Logger LOGGER = System.getLogger(Node.class.getName());
 
 //    static {
@@ -223,68 +222,80 @@ public class Node {
             return CompletableFuture.failedFuture(new IllegalStateException("Illegal lease"));
         }
 
-        CompletableFuture<Void> resFut = new CompletableFuture<Void>().orTimeout(TIMEOUT_SEC, TimeUnit.SECONDS);
+        CompletableFuture<Void> resFut = new CompletableFuture<Void>();
 
         // TODO implement batching by concatenating queue elements into single message.
-        group.executorService.submit(new Runnable() {
-            @Override
-            public void run() {
-                Set<NodeId> nodeIds = group.getNodeState().keySet();
+        group.executorService.submit(() -> {
+            Set<NodeId> nodeIds = group.getNodeState().keySet();
 
-                AtomicInteger responded = new AtomicInteger(0);
-                AtomicInteger err = new AtomicInteger(0);
-                AtomicBoolean localDone = new AtomicBoolean();
+            AtomicInteger completed = new AtomicInteger(0);
+            AtomicInteger errcnt = new AtomicInteger(0);
+            AtomicBoolean localDone = new AtomicBoolean();
 
-                UUID traceId = UUID.randomUUID();
+            UUID traceId = UUID.randomUUID();
 
-                for (NodeId id : nodeIds) {
-                    Replicator replicator = group.replicators.get(id);
-                    if (replicator == null) {
-                        replicator = new Replicator(Node.this, id, grp, top); // TODO do we need to pass top ?
-                        group.replicators.put(id, replicator);
+            for (NodeId id : nodeIds) {
+                Replicator replicator = group.replicators.get(id);
+                if (replicator == null) {
+                    replicator = new Replicator(Node.this, id, grp, top); // TODO do we need to pass top ?
+                    group.replicators.put(id, replicator);
+                }
+
+                Request request = new Request(); // Creating the request copy is essential.
+                request.setId(traceId);
+                request.setTs(now);
+                request.setSender(nodeId);
+                request.setGrp(grp);
+                request.setPayload(new Replicate(replicator.getLwm(), put));
+
+                Inflight inflight = replicator.send(request);
+
+                Set<Inflight> errs = new HashSet<>();
+
+                // This future is completed from node's worker thread
+                inflight.ioFuture().whenCompleteAsync((resp, err) -> {
+                    if (resp != null)
+                        clock().onResponse(resp.getTs());
+
+                    int maj = nodeIds.size() / 2 + 1;
+
+                    completed.incrementAndGet();
+
+                    if (err != null || resp.getReturn() != 0) {
+                        errcnt.incrementAndGet();
+                        errs.add(inflight);
                     }
 
-                    Request request = new Request(); // Creating the request copy is essential.
-                    request.setId(traceId);
-                    request.setTs(now);
-                    request.setSender(nodeId);
-                    request.setGrp(grp);
-                    request.setPayload(new Replicate(replicator.getLwm(), put));
+                    if (id.equals(Node.this.nodeId))
+                        localDone.set(true);
 
-                    Inflight inflight = replicator.send(request);
+                    if (err == null)
+                        inflight.finish(false);
 
-                    inflight.future().thenAccept(resp -> {
-                        if (resFut.isDone()) {
-                            return; // Ignore response for a completed future.
-                        }
-
-                        int maj = nodeIds.size() / 2 + 1;
-
-                        responded.incrementAndGet();
-
-                        if (resp.getReturn() != 0) {
-                            // TODO invalidate replicator.
-                            err.incrementAndGet();
-                        }
-
-                        if (id.equals(Node.this.nodeId))
-                            localDone.set(true);
-
-                        if (responded.get() >= nodeIds.size() / 2 + 1) {
-                            if (err.get() > nodeIds.size() - maj) {
-                                LOGGER.log(Level.DEBUG, "Err ack ts={0} req={1} node={2}", inflight.ts(), traceId, id);
-                                resFut.completeExceptionally(new Exception("Replication failure"));
-                            } else if (localDone.get()) { // Needs local completion.
-                                LOGGER.log(Level.DEBUG, "Ok ack ts={0} req={1} node={2}", inflight.ts(), traceId, id);
-                                resFut.complete(null);
-                            } else {
-                                LOGGER.log(Level.DEBUG, "Ack ts={0} req={1} node={2}", inflight.ts(), traceId, id);
+                    if (completed.get() >= nodeIds.size() / 2 + 1) {
+                        if (errcnt.get() > nodeIds.size() - maj) { // Can tolerate minority fails
+                            // Can propagate LWM for errors if operation is failed.
+                            for (Inflight i : errs) {
+                                i.finish(false);
                             }
+
+                            LOGGER.log(Level.DEBUG, "Err ack ts={0} req={1} node={2}", inflight.ts(), traceId, id);
+                            resFut.completeExceptionally(new Exception("Replication failure"));
+                        } else if (localDone.get()) { // Needs local completion.
+                            // Cannot propagate LWM for errors if operation is OK.
+                            for (Inflight i : errs) {
+                                i.finish(true);
+                            }
+
+                            LOGGER.log(Level.DEBUG, "Ok ack ts={0} req={1} node={2}", inflight.ts(), traceId, id);
+                            resFut.complete(null);
                         } else {
                             LOGGER.log(Level.DEBUG, "Ack ts={0} req={1} node={2}", inflight.ts(), traceId, id);
                         }
-                    });
-                }
+                    } else {
+                        LOGGER.log(Level.DEBUG, "Ack ts={0} req={1} node={2}", inflight.ts(), traceId, id);
+                    }
+                }, executor);
             }
         });
 
