@@ -20,8 +20,6 @@ import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.jetbrains.annotations.Nullable;
@@ -43,7 +41,7 @@ public class Node {
 
     private final Clock clock;
 
-    private Executor executor = Executors.newSingleThreadExecutor();
+    private Executor requestExecutor = Executors.newSingleThreadExecutor();
 
     private Map<String, Group> groups = new HashMap<>();
 
@@ -70,7 +68,7 @@ public class Node {
     public CompletableFuture<Response> accept(Request request) {
         CompletableFuture<Response> resp = new CompletableFuture<>();
 
-        executor.execute(() -> {
+        requestExecutor.execute(() -> {
             // Update logical clocks.
             clock.onRequest(request.getTs());
 
@@ -295,7 +293,7 @@ public class Node {
                     } else {
                         LOGGER.log(Level.DEBUG, "Ack ts={0} req={1} node={2}", inflight.ts(), traceId, id);
                     }
-                }, executor);
+                }, group.executorService);
             }
         });
 

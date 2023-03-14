@@ -1,9 +1,7 @@
 package com.ascherbakoff.ai3.cluster;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.ascherbakoff.ai3.clock.Timestamp;
@@ -17,7 +15,6 @@ import java.lang.System.Logger.Level;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CompletionException;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
@@ -74,15 +71,16 @@ public class ReplicationGroup3NodesTest extends BasicTest {
     }
 
     @Test
-    public void testBasicReplication() {
+    public void testBasicReplication() throws InterruptedException {
         createCluster();
 
         Node leaseholder = top.getNode(leader);
         leaseholder.replicate(GRP_NAME, new Put(0, 0)).join();
+        leaseholder.sync(GRP_NAME).join();
 
         for (Node node : top.getNodeMap().values()) {
             assertTrue(waitForCondition(() -> {
-                Integer val = node.localGet(GRP_NAME, 0, node.clock().get());
+                Integer val = node.localGet(GRP_NAME, 0, node.group(GRP_NAME).lwm);
                 return val != null && 0 == val.intValue();
             }, 1_000));
         }
@@ -203,6 +201,26 @@ public class ReplicationGroup3NodesTest extends BasicTest {
         t4 = top.getNode(alice).group(GRP_NAME).replicators.get(charlie).getLwm();
         t5 = top.getNode(charlie).group(GRP_NAME).lwm;
 
+        assertTrue(t0.equals(t1));
+        assertTrue(t0.compareTo(t2) > 0);
+        assertTrue(t1.compareTo(t3) > 0);
+        assertTrue(t0.equals(t4));
+        assertTrue(t1.equals(t5));
+
+        toBob.client().clearBlock();
+
+        val++;
+        CompletableFuture<Void> fut2 = leaseholder.replicate(GRP_NAME, new Put(val, val));
+        fut2.join();
+
+        leaseholder.sync(GRP_NAME).join();
+
+        t0 = top.getNode(alice).group(GRP_NAME).replicators.get(alice).getLwm();
+        t1 = top.getNode(alice).group(GRP_NAME).lwm;
+        t2 = top.getNode(alice).group(GRP_NAME).replicators.get(bob).getLwm();
+        t3 = top.getNode(bob).group(GRP_NAME).lwm;
+        t4 = top.getNode(alice).group(GRP_NAME).replicators.get(charlie).getLwm();
+        t5 = top.getNode(charlie).group(GRP_NAME).lwm;
         assertTrue(t0.equals(t1));
         assertTrue(t0.compareTo(t2) > 0);
         assertTrue(t1.compareTo(t3) > 0);

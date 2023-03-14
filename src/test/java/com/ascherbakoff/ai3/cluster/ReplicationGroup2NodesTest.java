@@ -417,6 +417,22 @@ public class ReplicationGroup2NodesTest extends BasicTest {
         assertEquals(t0, t1);
         assertEquals(t1, t2);
         assertEquals(t2, t3);
+
+        toBob.client().clearBlock();
+
+        val++;
+        CompletableFuture<Void> fut2 = leaseholder.replicate(GRP_NAME, new Put(val, val));
+        fut2.join();
+
+        leaseholder.sync(GRP_NAME).join();
+
+        t0 = top.getNode(alice).group(GRP_NAME).replicators.get(alice).getLwm();
+        t1 = top.getNode(alice).group(GRP_NAME).lwm;
+        t2 = top.getNode(alice).group(GRP_NAME).replicators.get(bob).getLwm();
+        t3 = top.getNode(bob).group(GRP_NAME).lwm;
+        assertEquals(t0, t1);
+        assertEquals(t1, t2);
+        assertEquals(t2, t3);
     }
 
     /**
