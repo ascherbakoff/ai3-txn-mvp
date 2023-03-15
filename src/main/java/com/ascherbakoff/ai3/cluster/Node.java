@@ -9,6 +9,7 @@ import com.ascherbakoff.ai3.replication.Replicator;
 import com.ascherbakoff.ai3.replication.Replicator.Inflight;
 import com.ascherbakoff.ai3.replication.Request;
 import com.ascherbakoff.ai3.replication.Response;
+import com.ascherbakoff.ai3.replication.Rollback;
 import com.ascherbakoff.ai3.replication.Sync;
 import java.lang.System.Logger.Level;
 import java.util.HashMap;
@@ -103,6 +104,8 @@ public class Node {
             grp.lwm = replicate.getLwm();
         }
 
+        grp.table.commit(replicate.getLwm());
+
         Object data = replicate.getData();
         if (data instanceof Put) {
             Put put = (Put) data;
@@ -111,6 +114,11 @@ public class Node {
         } else {
             resp.complete(new Response(now, -1));
         }
+    }
+
+    public void visit(Rollback rollback, Request request, CompletableFuture<Response> resp) {
+        Group grp = groups.get(request.getGrp());
+        grp.table.rollback(rollback.getTs());
     }
 
     public void visit(Lease lease, Request request, CompletableFuture<Response> resp) {
@@ -126,9 +134,9 @@ public class Node {
             grp.lwm = sync.getLwm(); // Ignore stale sync requests - this is safe.
         }
 
+        grp.table.commit(sync.getLwm());
         resp.complete(new Response(Node.this.clock.now()));
     }
-
 
     public boolean refresh(Timestamp now, String grp, Timestamp leaseStart, NodeId leaseholder, Map<NodeId, Tracker.State> nodeState) {
         Group group = this.groups.get(grp);
@@ -212,15 +220,15 @@ public class Node {
      * @param put The command.
      * @return The result.
      */
-    public CompletableFuture<Void> replicate(String grp, Put put) {
+    public CompletableFuture<Timestamp> replicate(String grp, Put put) {
         Group group = groups.get(grp);
 
-        Timestamp now = clock.now();
+        Timestamp now = clock.now(); // Used as tx id.
         if (!group.validLease(now, nodeId)) {
             return CompletableFuture.failedFuture(new IllegalStateException("Illegal lease"));
         }
 
-        CompletableFuture<Void> resFut = new CompletableFuture<Void>();
+        CompletableFuture<Timestamp> resFut = new CompletableFuture<>();
 
         // TODO implement batching by concatenating queue elements into single message.
         group.executorService.submit(() -> {
@@ -286,7 +294,7 @@ public class Node {
                             }
 
                             LOGGER.log(Level.DEBUG, "Ok ack ts={0} req={1} node={2}", inflight.ts(), traceId, id);
-                            resFut.complete(null);
+                            resFut.complete(now);
                         } else {
                             LOGGER.log(Level.DEBUG, "Ack ts={0} req={1} node={2}", inflight.ts(), traceId, id);
                         }
@@ -348,53 +356,50 @@ public class Node {
 
         CompletableFuture<Void> res = new CompletableFuture<>();
 
-        group.executorService.submit(new Runnable() {
-            @Override
-            public void run() {
-                Timestamp now = clock.now();
-                if (!group.validLease(now, nodeId)) {
-                    res.completeExceptionally(new IllegalStateException("Illegal lease"));
-                    return;
+        group.executorService.submit(() -> {
+            Timestamp now = clock.now();
+            if (!group.validLease(now, nodeId)) {
+                res.completeExceptionally(new IllegalStateException("Illegal lease"));
+                return;
+            }
+
+            Set<NodeId> nodeIds = new HashSet<>(group.getNodeState().keySet());
+
+            AtomicInteger acks = new AtomicInteger(0);
+
+            for (NodeId id : nodeIds) {
+                Replicator replicator = group.replicators.get(id);
+                if (replicator == null) {
+                    replicator = new Replicator(Node.this, id, grp, top);
+                    group.replicators.put(id, replicator);
                 }
 
-                Set<NodeId> nodeIds = new HashSet<>(group.getNodeState().keySet());
-
-                AtomicInteger acks = new AtomicInteger(0);
-
-                for (NodeId id : nodeIds) {
-                    Replicator replicator = group.replicators.get(id);
-                    if (replicator == null) {
-                        replicator = new Replicator(Node.this, id, grp, top);
-                        group.replicators.put(id, replicator);
-                    }
-
-                    // Handle idle propagation.
-                    if (replicator.inflights() == 0) {
-                        replicator.setLwm(now);
-                        group.lwm = now;
-                    }
-
-                    // Only update lwm for local node.
-                    if (id.equals(nodeId)) {
-                        int val = acks.incrementAndGet();
-                        if (val == nodeIds.size())
-                            res.complete(null);
-                        continue;
-                    }
-
-                    Request r = new Request();
-                    r.setSender(nodeId);
-                    r.setGrp(grp);
-                    r.setTs(now); // Propagate ts in idle sync.
-                    r.setPayload(new Sync(replicator.getLwm()));
-
-                    // TODO needs timeout - not all nodes can respond.
-                    replicator.idleSync(r).thenAccept(resp -> {
-                        int val = acks.incrementAndGet();
-                        if (val == nodeIds.size())
-                            res.complete(null);
-                    });
+                // Handle idle propagation.
+                if (replicator.inflights() == 0) {
+                    replicator.setLwm(now);
+                    group.lwm = now;
                 }
+
+                // Handle local node.
+                if (id.equals(nodeId)) {
+                    int val = acks.incrementAndGet();
+                    if (val == nodeIds.size())
+                        res.complete(null);
+                    continue;
+                }
+
+                Request r = new Request();
+                r.setSender(nodeId);
+                r.setGrp(grp);
+                r.setTs(now); // Propagate ts in idle sync.
+                r.setPayload(new Sync(replicator.getLwm()));
+
+                // TODO needs timeout - not all nodes can respond.
+                replicator.idleSync(r).thenAccept(resp -> {
+                    int val = acks.incrementAndGet();
+                    if (val == nodeIds.size())
+                        res.complete(null);
+                });
             }
         });
 

@@ -2,8 +2,10 @@ package com.ascherbakoff.ai3.table;
 
 import com.ascherbakoff.ai3.clock.Timestamp;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.Map;
 import java.util.Map.Entry;
+import java.util.TreeMap;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicLong;
 import org.jetbrains.annotations.Nullable;
@@ -20,14 +22,15 @@ public class MVKeyValueTable<K extends Comparable<K>, V extends Comparable<V>> {
 
     AtomicLong idGen = new AtomicLong();
 
+    TreeMap<Timestamp, K> pending = new TreeMap<>();
+
     public MVKeyValueTable() {
         rowStore = new VersionChainRowStore<>();
         pk = new HashMap<>();
     }
 
-    public synchronized @Nullable V put(K k, V v, Timestamp commitTs) {
+    public synchronized @Nullable V put(K k, V v, Timestamp ts) {
         // TODO can use lock, but put is single threaded.
-
         VersionChain<Map.Entry<K,V>> chain = pk.get(k);
 
         Map.Entry<K,V> prev = chain == null ? null : chain.head();
@@ -40,9 +43,28 @@ public class MVKeyValueTable<K extends Comparable<K>, V extends Comparable<V>> {
             rowStore.update(chain, new MyEntry<>(k, v), txId);
         }
 
-        rowStore.commitWrite(chain, commitTs, txId);
+        pending.put(ts, k);
 
         return prev == null ? null : prev.getValue();
+    }
+
+    public synchronized void commit(Timestamp commitTs) {
+        Iterator<Entry<Timestamp, K>> iterator = pending.entrySet().iterator();
+
+        while (iterator.hasNext()) {
+            Entry<Timestamp, K> next = iterator.next();
+
+            if (next.getKey().compareTo(commitTs) > 0)
+                break;
+
+            iterator.remove();
+
+            VersionChain<Map.Entry<K,V>> chain = pk.get(next.getValue());
+
+            assert chain != null;
+
+            rowStore.commitWrite(chain, commitTs, null);
+        }
     }
 
     public synchronized @Nullable V get(K key, Timestamp ts) {
@@ -74,6 +96,17 @@ public class MVKeyValueTable<K extends Comparable<K>, V extends Comparable<V>> {
 
     public Cursor<Map.Entry<K, V>> scan(Timestamp ts) {
         return rowStore.scan(ts);
+    }
+
+    public void rollback(Timestamp ts) {
+        K k = pending.get(ts);
+
+        if (k == null)
+            return; // TODO warn
+
+        VersionChain<Map.Entry<K,V>> chain = pk.get(k);
+
+        chain.abortWrite(null);
     }
 
     private static class MyEntry<K, V> implements Map.Entry<K,V> {

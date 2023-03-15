@@ -166,7 +166,7 @@ public class ReplicationGroup3NodesTest extends BasicTest {
         toBob.client().block(request -> request.getPayload() instanceof Replicate);
 
         val++;
-        CompletableFuture<Void> fut = leaseholder.replicate(GRP_NAME, new Put(val, val));
+        CompletableFuture<Timestamp> fut = leaseholder.replicate(GRP_NAME, new Put(val, val));
         assertTrue(waitForCondition(() -> toBob.client().blocked().size() == 1, 1_000));
         fut.join();
 
@@ -210,7 +210,7 @@ public class ReplicationGroup3NodesTest extends BasicTest {
         toBob.client().clearBlock();
 
         val++;
-        CompletableFuture<Void> fut2 = leaseholder.replicate(GRP_NAME, new Put(val, val));
+        CompletableFuture<Timestamp> fut2 = leaseholder.replicate(GRP_NAME, new Put(val, val));
         fut2.join();
 
         leaseholder.sync(GRP_NAME).join();

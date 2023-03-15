@@ -175,7 +175,7 @@ class VersionChain<T> {
     }
 
     synchronized public void commitWrite(Timestamp timestamp, UUID txId) {
-        assert txId.equals(this.txId);
+        assert txId == null || txId.equals(this.txId);
 
         Objects.requireNonNull(timestamp);
 
@@ -187,7 +187,7 @@ class VersionChain<T> {
     }
 
     synchronized public void abortWrite(UUID txId) {
-        assert txId.equals(this.txId);
+        assert txId == null || txId.equals(this.txId);
         assert next != null;
 
         setTxId(null);

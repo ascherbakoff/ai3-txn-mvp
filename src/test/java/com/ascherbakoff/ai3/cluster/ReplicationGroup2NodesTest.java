@@ -128,9 +128,9 @@ public class ReplicationGroup2NodesTest extends BasicTest {
 
         Timestamp t0 = top.getNode(alice).group(GRP_NAME).replicators.get(bob).getLwm();
 
-        CompletableFuture<Void> res0 = top.getNode(alice).replicate(GRP_NAME, new Put(0, 0));
-        CompletableFuture<Void> res1 = top.getNode(alice).replicate(GRP_NAME, new Put(1, 1));
-        CompletableFuture<Void> res2 = top.getNode(alice).replicate(GRP_NAME, new Put(2, 2));
+        CompletableFuture<Timestamp> res0 = top.getNode(alice).replicate(GRP_NAME, new Put(0, 0));
+        CompletableFuture<Timestamp> res1 = top.getNode(alice).replicate(GRP_NAME, new Put(1, 1));
+        CompletableFuture<Timestamp> res2 = top.getNode(alice).replicate(GRP_NAME, new Put(2, 2));
 
         assertTrue(waitForCondition(() -> toBob.client().blocked().size() == 3, 1000));
         ArrayList<Request> blocked = toBob.client().blocked();
@@ -175,8 +175,8 @@ public class ReplicationGroup2NodesTest extends BasicTest {
 
         Timestamp t0 = top.getNode(alice).group(GRP_NAME).replicators.get(bob).getLwm();
 
-        CompletableFuture<Void> res0 = top.getNode(alice).replicate(GRP_NAME, new Put(0, 0));
-        CompletableFuture<Void> res1 = top.getNode(alice).replicate(GRP_NAME, new Put(1, 1));
+        CompletableFuture<Timestamp> res0 = top.getNode(alice).replicate(GRP_NAME, new Put(0, 0));
+        CompletableFuture<Timestamp> res1 = top.getNode(alice).replicate(GRP_NAME, new Put(1, 1));
 
         assertTrue(waitForCondition(() -> toBob.client().blocked().size() == 2, 1000));
         ArrayList<Request> blocked = toBob.client().blocked();
@@ -187,7 +187,7 @@ public class ReplicationGroup2NodesTest extends BasicTest {
         toBob.inflight(blocked.get(0).getTs()).future().join();
         assertEquals(t0, top.getNode(bob).group(GRP_NAME).lwm); // LWM was not propagated by subsequent message.
 
-        CompletableFuture<Void> res2 = top.getNode(alice).replicate(GRP_NAME, new Put(2, 2));
+        CompletableFuture<Timestamp> res2 = top.getNode(alice).replicate(GRP_NAME, new Put(2, 2));
 
         assertTrue(waitForCondition(() -> toBob.client().blocked().size() == 2, 1000));
         ArrayList<Request> blocked2 = toBob.client().blocked();
@@ -284,7 +284,7 @@ public class ReplicationGroup2NodesTest extends BasicTest {
         Replicator toBob = leaseholder.group(GRP_NAME).replicators.get(bob);
         toBob.client().block(r -> true);
 
-        CompletableFuture<Void> fut = leaseholder.replicate(GRP_NAME, new Put(val, val));
+        CompletableFuture<Timestamp> fut = leaseholder.replicate(GRP_NAME, new Put(val, val));
         assertFalse(fut.isDone());
 
         assertTrue(waitForCondition(() -> toBob.client().blocked().size() == 1, 1_000));
@@ -315,7 +315,7 @@ public class ReplicationGroup2NodesTest extends BasicTest {
         Replicator toBob = leaseholder.group(GRP_NAME).replicators.get(bob);
         toBob.client().block(r -> true);
 
-        CompletableFuture<Void> fut = leaseholder.replicate(GRP_NAME, new Put(val, val));
+        CompletableFuture<Timestamp> fut = leaseholder.replicate(GRP_NAME, new Put(val, val));
         assertFalse(fut.isDone());
 
         assertTrue(waitForCondition(() -> toBob.client().blocked().size() == 1, 1_000));
@@ -351,7 +351,7 @@ public class ReplicationGroup2NodesTest extends BasicTest {
         toBob.client().block(request -> request.getTs().physical() < Tracker.LEASE_DURATION / 2);
 
         val++;
-        CompletableFuture<Void> fut = leaseholder.replicate(GRP_NAME, new Put(val, val));
+        CompletableFuture<Timestamp> fut = leaseholder.replicate(GRP_NAME, new Put(val, val));
         assertTrue(waitForCondition(() -> toBob.client().blocked().size() == 1, 1_000));
         assertFalse(fut.isDone());
 
@@ -388,7 +388,7 @@ public class ReplicationGroup2NodesTest extends BasicTest {
         toBob.client().block(request -> request.getPayload() instanceof Replicate);
 
         val++;
-        CompletableFuture<Void> fut = leaseholder.replicate(GRP_NAME, new Put(val, val));
+        CompletableFuture<Timestamp> fut = leaseholder.replicate(GRP_NAME, new Put(val, val));
         assertTrue(waitForCondition(() -> toBob.client().blocked().size() == 1, 1_000));
         assertFalse(fut.isDone());
 
@@ -421,7 +421,7 @@ public class ReplicationGroup2NodesTest extends BasicTest {
         toBob.client().clearBlock();
 
         val++;
-        CompletableFuture<Void> fut2 = leaseholder.replicate(GRP_NAME, new Put(val, val));
+        CompletableFuture<Timestamp> fut2 = leaseholder.replicate(GRP_NAME, new Put(val, val));
         fut2.join();
 
         leaseholder.sync(GRP_NAME).join();

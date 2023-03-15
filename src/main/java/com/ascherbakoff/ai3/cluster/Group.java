@@ -22,7 +22,7 @@ public class Group {
 
     Map<NodeId, Replicator> replicators = new HashMap<>();
 
-    MVKeyValueTable<Integer, Integer> table = new MVKeyValueTable<>();
+    public MVKeyValueTable<Integer, Integer> table = new MVKeyValueTable<>();
 
     private Timestamp lease;
 

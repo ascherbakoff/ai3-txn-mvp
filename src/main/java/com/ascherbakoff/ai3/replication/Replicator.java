@@ -1,6 +1,7 @@
 package com.ascherbakoff.ai3.replication;
 
 import com.ascherbakoff.ai3.clock.Timestamp;
+import com.ascherbakoff.ai3.cluster.Group;
 import com.ascherbakoff.ai3.cluster.Node;
 import com.ascherbakoff.ai3.cluster.NodeId;
 import com.ascherbakoff.ai3.cluster.Topology;
@@ -9,6 +10,7 @@ import java.util.Iterator;
 import java.util.Map.Entry;
 import java.util.Set;
 import java.util.TreeMap;
+import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 
@@ -76,7 +78,9 @@ public class Replicator {
 
         // Adjust local LWM.
         if (nodeId.equals(node.id())) {
-            node.group(grp).lwm = lwm;
+            Group group = node.group(grp);
+            group.lwm = lwm;
+            group.table.commit(lwm);
         }
 
         // Complete after write.
