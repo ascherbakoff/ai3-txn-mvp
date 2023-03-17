@@ -2,6 +2,7 @@ package com.ascherbakoff.ai3.cluster;
 
 import com.ascherbakoff.ai3.clock.Clock;
 import com.ascherbakoff.ai3.clock.Timestamp;
+import com.ascherbakoff.ai3.replication.Finish;
 import com.ascherbakoff.ai3.replication.Lease;
 import com.ascherbakoff.ai3.replication.Put;
 import com.ascherbakoff.ai3.replication.Replicate;
@@ -9,7 +10,6 @@ import com.ascherbakoff.ai3.replication.Replicator;
 import com.ascherbakoff.ai3.replication.Replicator.Inflight;
 import com.ascherbakoff.ai3.replication.Request;
 import com.ascherbakoff.ai3.replication.Response;
-import com.ascherbakoff.ai3.replication.Rollback;
 import com.ascherbakoff.ai3.replication.Sync;
 import java.lang.System.Logger.Level;
 import java.util.HashMap;
@@ -19,8 +19,6 @@ import java.util.Map.Entry;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.Executor;
-import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.jetbrains.annotations.Nullable;
@@ -42,16 +40,17 @@ public class Node {
 
     private final Clock clock;
 
-    private Executor requestExecutor = Executors.newSingleThreadExecutor();
-
     private Map<String, Group> groups = new HashMap<>();
 
     private final Topology top;
 
-    public Node(NodeId nodeId, Topology top, Clock clock) {
+    public Node(NodeId nodeId, Topology top, Clock clock, String... groups) {
         this.nodeId = nodeId;
         this.top = top;
         this.clock = clock;
+        for (String group : groups) {
+            this.groups.put(group, new Group(group));
+        }
     }
 
     public void start() {
@@ -69,7 +68,7 @@ public class Node {
     public CompletableFuture<Response> accept(Request request) {
         CompletableFuture<Response> resp = new CompletableFuture<>();
 
-        requestExecutor.execute(() -> {
+        groups.get(request.getGrp()).executorService.execute(() -> {
             // Update logical clocks.
             clock.onRequest(request.getTs());
 
@@ -101,10 +100,8 @@ public class Node {
 
         if (replicate.getLwm().compareTo(grp.lwm) > 0) {
             // Ignore stale sync requests - this is safe, because all updates up to lwm already replicated.
-            grp.lwm = replicate.getLwm();
+            grp.setLwm(replicate.getLwm());
         }
-
-        grp.table.commit(replicate.getLwm());
 
         Object data = replicate.getData();
         if (data instanceof Put) {
@@ -116,9 +113,15 @@ public class Node {
         }
     }
 
-    public void visit(Rollback rollback, Request request, CompletableFuture<Response> resp) {
+    public void visit(Finish finish, Request request, CompletableFuture<Response> resp) {
         Group grp = groups.get(request.getGrp());
-        grp.table.rollback(rollback.getTs());
+
+        if (finish.getLwm().compareTo(grp.lwm) > 0) {
+            // Ignore stale sync requests - this is safe, because all updates up to lwm already replicated.
+            grp.setLwm(finish.getLwm());
+        }
+
+        grp.table.finish(finish.getTs(), finish.finish());
     }
 
     public void visit(Lease lease, Request request, CompletableFuture<Response> resp) {
@@ -131,7 +134,7 @@ public class Node {
         Group grp = groups.get(request.getGrp());
 
         if (sync.getLwm().compareTo(grp.lwm) > 0) {
-            grp.lwm = sync.getLwm(); // Ignore stale sync requests - this is safe.
+            grp.setLwm(sync.getLwm()); // Ignore stale sync requests - this is safe.
         }
 
         grp.table.commit(sync.getLwm());
@@ -140,10 +143,6 @@ public class Node {
 
     public boolean refresh(Timestamp now, String grp, Timestamp leaseStart, NodeId leaseholder, Map<NodeId, Tracker.State> nodeState) {
         Group group = this.groups.get(grp);
-        if (group == null) {
-            group = new Group(grp);
-            this.groups.put(grp, group);
-        }
 
         Timestamp prev = group.getLease();
 
@@ -235,10 +234,12 @@ public class Node {
             Set<NodeId> nodeIds = group.getNodeState().keySet();
 
             AtomicInteger completed = new AtomicInteger(0);
-            AtomicInteger errcnt = new AtomicInteger(0);
             AtomicBoolean localDone = new AtomicBoolean();
 
             UUID traceId = UUID.randomUUID();
+
+            Set<Inflight> errs = new HashSet<>();
+            Set<Inflight> succ = new HashSet<>();
 
             for (NodeId id : nodeIds) {
                 Replicator replicator = group.replicators.get(id);
@@ -256,10 +257,8 @@ public class Node {
 
                 Inflight inflight = replicator.send(request);
 
-                Set<Inflight> errs = new HashSet<>();
-
                 // This future is completed from node's worker thread
-                inflight.ioFuture().whenCompleteAsync((resp, err) -> {
+                inflight.ioFuture().whenCompleteAsync((resp, ex) -> {
                     if (resp != null)
                         clock().onResponse(resp.getTs());
 
@@ -267,30 +266,33 @@ public class Node {
 
                     completed.incrementAndGet();
 
-                    if (err != null || resp.getReturn() != 0) {
-                        errcnt.incrementAndGet();
+                    if (ex != null || resp.getReturn() != 0) {
                         errs.add(inflight);
+                    } else {
+                        succ.add(inflight);
                     }
 
                     if (id.equals(Node.this.nodeId))
                         localDone.set(true);
 
-                    if (err == null)
-                        inflight.finish(false);
-
-                    if (completed.get() >= nodeIds.size() / 2 + 1) {
-                        if (errcnt.get() > nodeIds.size() - maj) { // Can tolerate minority fails
+                    if (completed.get() >= maj) {
+                        if (errs.size() > nodeIds.size() - maj) { // Can tolerate minority fails
                             // Can propagate LWM for errors if operation is failed.
                             for (Inflight i : errs) {
-                                i.finish(false);
+                                i.finish(Replicator.State.ROLLBACK);
+                            }
+                            for (Inflight i : succ) {
+                                i.finish(Replicator.State.ROLLBACK);
                             }
 
                             LOGGER.log(Level.DEBUG, "Err ack ts={0} req={1} node={2}", inflight.ts(), traceId, id);
                             resFut.completeExceptionally(new Exception("Replication failure"));
                         } else if (localDone.get()) { // Needs local completion.
-                            // Cannot propagate LWM for errors if operation is OK.
                             for (Inflight i : errs) {
-                                i.finish(true);
+                                i.finish(Replicator.State.ERROR);
+                            }
+                            for (Inflight i : succ) {
+                                i.finish(Replicator.State.COMMIT);
                             }
 
                             LOGGER.log(Level.DEBUG, "Ok ack ts={0} req={1} node={2}", inflight.ts(), traceId, id);
@@ -340,15 +342,24 @@ public class Node {
         }
     }
 
-    public @Nullable Integer localGet(String grp, int key, Timestamp ts) {
+    public CompletableFuture<Integer> localGet(String grp, int key, Timestamp ts) {
         Group group = groups.get(grp);
         assert group != null;
 
-        // TODO wait
-        if (group.lwm.compareTo(ts) < 0)
-            throw new IllegalStateException("Data is not replicated at this timestamp [lwm=");
+        CompletableFuture<Integer> fut = new CompletableFuture<>();
 
-        return group.table.get(key, ts);
+        group.executorService.submit(() -> {
+            // Put to wait queue.
+            if (group.lwm.compareTo(ts) < 0) {
+                group.pendingReads.put(ts, new Read(key, fut));
+                return;
+            } else {
+                Integer val = group.table.get(key, ts);
+                fut.complete(val);
+            }
+        });
+
+        return fut;
     }
 
     public CompletableFuture<Void> sync(String grp) {
@@ -377,7 +388,7 @@ public class Node {
                 // Handle idle propagation.
                 if (replicator.inflights() == 0) {
                     replicator.setLwm(now);
-                    group.lwm = now;
+                    group.setLwm(now);
                 }
 
                 // Handle local node.

@@ -9,6 +9,7 @@ import com.ascherbakoff.ai3.replication.Put;
 import com.ascherbakoff.ai3.replication.Replicate;
 import com.ascherbakoff.ai3.replication.Replicator;
 import com.ascherbakoff.ai3.replication.Replicator.Inflight;
+import com.ascherbakoff.ai3.replication.Replicator.State;
 import com.ascherbakoff.ai3.replication.Request;
 import com.ascherbakoff.ai3.util.BasicTest;
 import java.lang.System.Logger.Level;
@@ -40,13 +41,13 @@ public class ReplicationGroup3NodesTest extends BasicTest {
         top = new Topology();
 
         alice = new NodeId("alice");
-        top.regiser(new Node(alice, top, clock));
+        top.regiser(new Node(alice, top, clock, GRP_NAME));
 
         bob = new NodeId("bob");
-        top.regiser(new Node(bob, top, clock));
+        top.regiser(new Node(bob, top, clock, GRP_NAME));
 
         charlie = new NodeId("charlie");
-        top.regiser(new Node(charlie, top, clock));
+        top.regiser(new Node(charlie, top, clock, GRP_NAME));
 
         List<NodeId> nodeIds = new ArrayList<>();
         nodeIds.add(alice);
@@ -79,10 +80,7 @@ public class ReplicationGroup3NodesTest extends BasicTest {
         leaseholder.sync(GRP_NAME).join();
 
         for (Node node : top.getNodeMap().values()) {
-            assertTrue(waitForCondition(() -> {
-                Integer val = node.localGet(GRP_NAME, 0, node.group(GRP_NAME).lwm);
-                return val != null && 0 == val.intValue();
-            }, 1_000));
+            assertEquals(0, node.localGet(GRP_NAME, 0, node.group(GRP_NAME).lwm).join());
         }
     }
 
@@ -118,23 +116,11 @@ public class ReplicationGroup3NodesTest extends BasicTest {
 
         LOGGER.log(Level.INFO, "Finished sending messages, duration {0}ms", (System.nanoTime() - ts) / 1000 / 1000.);
 
-        // Wait for replication.
-        assertTrue(waitForCondition(() -> {
-            top.getNode(leader).sync(GRP_NAME).join();
-
-            for (Node node : top.getNodeMap().values()) {
-                Timestamp lwm = top.getNode(leader).group(GRP_NAME).replicators.get(node.id()).getLwm();
-                if (!lwm.equals(node.group(GRP_NAME).lwm)) {
-                    return false;
-                }
-            }
-
-            return true;
-        }, 1_000));
+        Timestamp lwm0 = top.getNode(leader).group(GRP_NAME).lwm;
 
         for (int i = 0; i < msgCnt; i++) {
             for (Node node : top.getNodeMap().values()) {
-                assertEquals(i, node.localGet(GRP_NAME, i, node.group(GRP_NAME).lwm));
+                assertEquals(i, node.localGet(GRP_NAME, i, lwm0).join());
             }
         }
     }
@@ -190,7 +176,7 @@ public class ReplicationGroup3NodesTest extends BasicTest {
         Request request = toBob.client().blocked().get(0);
         Inflight inflight = top.getNode(alice).group(GRP_NAME).replicators.get(bob).inflight(request.getTs());
         inflight.future().join();
-        assertTrue(inflight.error());
+        assertTrue(inflight.state() == State.ERROR);
 
         leaseholder.sync(GRP_NAME).join();
 

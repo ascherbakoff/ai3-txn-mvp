@@ -6,6 +6,7 @@ import com.ascherbakoff.ai3.cluster.Node;
 import com.ascherbakoff.ai3.cluster.NodeId;
 import com.ascherbakoff.ai3.cluster.Topology;
 import java.lang.System.Logger.Level;
+import java.util.Collections;
 import java.util.Iterator;
 import java.util.Map.Entry;
 import java.util.Set;
@@ -62,7 +63,7 @@ public class Replicator {
             Entry<Timestamp, Inflight> entry = iter.next();
 
             if (entry.getValue().future().isDone() || entry.getValue() == inflight) {
-                if (entry.getValue().error()) {
+                if (entry.getValue().state() == State.ERROR) {
                     break; // Break chain processing.
                 }
 
@@ -79,8 +80,18 @@ public class Replicator {
         // Adjust local LWM.
         if (nodeId.equals(node.id())) {
             Group group = node.group(grp);
-            group.lwm = lwm;
-            group.table.commit(lwm);
+            group.setLwm(lwm);
+        }
+
+        // TODO batch finish.
+        if (inflight.state != State.ERROR) {
+            Request request = new Request();
+            request.setTs(node.clock().now());
+            request.setGrp(grp);
+            request.setSender(nodeId);
+            request.setId(UUID.randomUUID());
+            request.setPayload(new Finish(Collections.singleton(inflight.ts()), inflight.state == State.COMMIT, getLwm()));
+            client.send(nodeId, request);
         }
 
         // Complete after write.
@@ -119,7 +130,7 @@ public class Replicator {
         private final CompletableFuture<Void> fut = new CompletableFuture<>();
         private final CompletableFuture<Response> ioFuture;
         private final Replicator replicator;
-        private boolean error = false;
+        private State state;
 
         Inflight(Timestamp now, CompletableFuture<Response> ioFut, Replicator replicator) {
             this.ts = now;
@@ -143,22 +154,28 @@ public class Replicator {
         public String toString() {
             return "Inflight{" +
                     "ts=" + ts +
-                    "err=" + error +
+                    ", state=" + state +
                     ", isDone=" + fut.isDone() +
                     '}';
         }
 
-        public void finish(boolean err) {
+        public void finish(State state) {
             if (fut.isDone())
                 return;
 
-            error = err;
+            this.state = state;
 
             replicator.finish(this);
         }
 
-        public boolean error() {
-            return error;
+        public State state() {
+            return state;
         }
+    }
+
+    public enum State {
+        COMMIT,
+        ROLLBACK,
+        ERROR
     }
 }

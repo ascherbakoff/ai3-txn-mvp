@@ -5,6 +5,7 @@ import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.Map.Entry;
+import java.util.Set;
 import java.util.TreeMap;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicLong;
@@ -98,15 +99,20 @@ public class MVKeyValueTable<K extends Comparable<K>, V extends Comparable<V>> {
         return rowStore.scan(ts);
     }
 
-    public void rollback(Timestamp ts) {
-        K k = pending.get(ts);
+    public void finish(Set<Timestamp> tss, boolean finish) {
+        for (Timestamp ts: tss) {
+            K k = pending.get(ts);
 
-        if (k == null)
-            return; // TODO warn
+            if (k == null)
+                return; // TODO warn
 
-        VersionChain<Map.Entry<K,V>> chain = pk.get(k);
+            VersionChain<Map.Entry<K,V>> chain = pk.get(k);
 
-        chain.abortWrite(null);
+            if (finish)
+                chain.commitWrite(ts, null);
+            else
+                chain.abortWrite(null);
+        }
     }
 
     private static class MyEntry<K, V> implements Map.Entry<K,V> {

@@ -6,7 +6,9 @@ import com.ascherbakoff.ai3.replication.Replicator;
 import com.ascherbakoff.ai3.table.MVKeyValueTable;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.concurrent.Executor;
+import java.util.Map.Entry;
+import java.util.NavigableMap;
+import java.util.TreeMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadFactory;
@@ -25,6 +27,8 @@ public class Group {
     public MVKeyValueTable<Integer, Integer> table = new MVKeyValueTable<>();
 
     private Timestamp lease;
+
+    public TreeMap<Timestamp, Read> pendingReads = new TreeMap<>();
 
     private @Nullable NodeId leaseHolder;
 
@@ -112,5 +116,16 @@ public class Group {
         assert lease != null;
 
         return lease.compareTo(at) <= 0 && at.compareTo(lease.adjust(Tracker.LEASE_DURATION)) < 0 ? true : false;
+    }
+
+    public void setLwm(Timestamp lwm) {
+        this.lwm = lwm;
+        NavigableMap<Timestamp, Read> head = pendingReads.headMap(lwm, true);
+        for (Entry<Timestamp, Read> e : head.entrySet()) {
+            Integer val = table.get(e.getValue().getKey(), e.getKey());
+            e.getValue().getFut().complete(val);
+        }
+
+        head.clear();
     }
 }

@@ -43,10 +43,10 @@ public class ReplicationGroup2NodesTest extends BasicTest {
         top = new Topology();
 
         alice = new NodeId("alice");
-        top.regiser(new Node(alice, top, clock));
+        top.regiser(new Node(alice, top, clock, GRP_NAME));
 
         bob = new NodeId("bob");
-        top.regiser(new Node(bob, top, clock));
+        top.regiser(new Node(bob, top, clock, GRP_NAME));
 
         List<NodeId> nodeIds = new ArrayList<>();
         nodeIds.add(alice);
@@ -56,7 +56,7 @@ public class ReplicationGroup2NodesTest extends BasicTest {
 
         tracker = new Tracker(top, clock);
         tracker.register(GRP_NAME, nodeIds);
-        tracker.assignLeaseholder(GRP_NAME, leader);
+        tracker.assignLeaseholder(GRP_NAME, leader); // TODO fail request if group not started.
 
         waitLeaseholder(leader);
     }
@@ -78,11 +78,12 @@ public class ReplicationGroup2NodesTest extends BasicTest {
     }
 
     @Test
-    public void testBasicReplication() {
+    public void testBasicReplication() throws InterruptedException {
         createCluster();
 
         Node leaseholder = top.getNode(leader);
         leaseholder.replicate(GRP_NAME, new Put(0, 0)).join();
+
         validate(0);
     }
 
@@ -251,10 +252,13 @@ public class ReplicationGroup2NodesTest extends BasicTest {
 
         LOGGER.log(Level.INFO, "Finished sending messages, duration {0}ms", (System.nanoTime() - ts) / 1000 / 1000.);
 
-        top.getNode(alice).sync(GRP_NAME).join();
+        Timestamp lwm0 = top.getNode(leader).group(GRP_NAME).lwm;
 
-        assertEquals(top.getNode(alice).group(GRP_NAME).replicators.get(alice).getLwm(), top.getNode(alice).group(GRP_NAME).lwm);
-        assertEquals(top.getNode(alice).group(GRP_NAME).replicators.get(bob).getLwm(), top.getNode(bob).group(GRP_NAME).lwm);
+        for (int i = 0; i < msgCnt; i++) {
+            for (Node node : top.getNodeMap().values()) {
+                assertEquals(i, node.localGet(GRP_NAME, i, lwm0).join());
+            }
+        }
     }
 
     @Test
@@ -294,6 +298,8 @@ public class ReplicationGroup2NodesTest extends BasicTest {
         toBob.client().unblock(r -> true);
 
         assertThrows(CompletionException.class, () -> fut.join());
+
+
     }
 
     @Test
@@ -471,16 +477,15 @@ public class ReplicationGroup2NodesTest extends BasicTest {
     }
 
     private void validate(int val) {
-        Node leaseholder = top.getNode(leader);
-        leaseholder.sync(GRP_NAME).join();
-        assertEquals(val, top.getNode(leader).localGet(GRP_NAME, val, top.getNode(alice).group(GRP_NAME).lwm));
-        assertEquals(val, top.getNode(leader).localGet(GRP_NAME, val, top.getNode(bob).group(GRP_NAME).lwm));
+        assertEquals(val, top.getNode(leader).localGet(GRP_NAME, val, top.getNode(alice).group(GRP_NAME).lwm).join());
+        assertEquals(val, top.getNode(leader).localGet(GRP_NAME, val, top.getNode(bob).group(GRP_NAME).lwm).join());
+
+        assertEquals(top.getNode(alice).group(GRP_NAME).replicators.get(alice).getLwm(), top.getNode(alice).group(GRP_NAME).lwm);
+        assertEquals(top.getNode(alice).group(GRP_NAME).replicators.get(bob).getLwm(), top.getNode(bob).group(GRP_NAME).lwm);
     }
 
     private void validateAtTimestamp(int val, Timestamp ts) {
-        Node leaseholder = top.getNode(leader);
-        leaseholder.sync(GRP_NAME).join();
-        assertEquals(val, top.getNode(leader).localGet(GRP_NAME, val, ts));
-        assertEquals(val, top.getNode(leader).localGet(GRP_NAME, val, ts));
+        assertEquals(val, top.getNode(leader).localGet(GRP_NAME, val, ts).join());
+        assertEquals(val, top.getNode(leader).localGet(GRP_NAME, val, ts).join());
     }
 }

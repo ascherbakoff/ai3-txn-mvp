@@ -27,10 +27,10 @@ public class LeaseholderAssignTest extends BasicTest {
         top = new Topology();
 
         alice = new NodeId("alice");
-        top.regiser(new Node(alice, top, clock));
+        top.regiser(new Node(alice, top, clock, GRP_NAME));
 
         bob = new NodeId("bob");
-        top.regiser(new Node(bob, top, clock));
+        top.regiser(new Node(bob, top, clock, GRP_NAME));
 
         tracker = new Tracker(top, clock);
 
