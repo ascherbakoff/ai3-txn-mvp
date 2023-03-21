@@ -7,13 +7,9 @@ import com.ascherbakoff.ai3.replication.Request;
 import com.ascherbakoff.ai3.replication.Response;
 import com.ascherbakoff.ai3.replication.RpcClient;
 import java.lang.System.Logger.Level;
-import java.util.ArrayList;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
-import java.util.concurrent.ThreadLocalRandom;
 import java.util.function.Consumer;
 import org.jetbrains.annotations.Nullable;
 
@@ -43,9 +39,15 @@ public class Tracker {
 
         Group group = new Group(name);
 
+        Map<NodeId, State> set = new HashMap<>();
+
         for (NodeId nodeId : nodeIds) {
-            group.setState(nodeId, topology.getNode(nodeId) == null ? State.OFFLINE : State.OPERATIONAL);
+            set.put(nodeId, topology.getNode(nodeId) == null ? State.OFFLINE : State.OPERATIONAL);
         }
+
+        Timestamp now = clock.now();
+        group.setState(set, now);
+        group.commitState(now, true);
 
         groups.put(name, group);
     }
@@ -62,50 +64,50 @@ public class Tracker {
         return groups.get(name);
     }
 
-    public boolean refreshLeaseholder(String name) {
-        Group group = groups.get(name);
-
-        if (group == null)
-            throw new IllegalArgumentException("Group not found " + name);
-
-        NodeId cur = group.getLeaseHolder();
-
-        NodeId candidate = getLeaseHolder(name);
-
-        if (candidate == null) { // Holder not elected or expired.
-            List<NodeId> nodeIds = new ArrayList<>(group.getNodeState().keySet());
-
-            while (!nodeIds.isEmpty()) {
-                int idx = ThreadLocalRandom.current().nextInt(nodeIds.size());
-
-                NodeId nodeId = nodeIds.get(idx);
-
-                Node node = topology.getNode(nodeId);
-
-                if (node == null) {
-                    nodeIds.remove(idx);
-                    group.setState(nodeId, State.OFFLINE);
-                    continue;
-                } else if (group.getNodeState().get(nodeId) == State.OFFLINE) {
-                    group.setState(nodeId, State.CATCHINGUP); // Node is back again.
-                }
-
-                candidate = nodeId; // Found operational node.
-                break;
-            }
-        } else {
-            candidate = cur; // Try to re-elect previous holder.
-        }
-
-        if (candidate == null) {
-            LOGGER.log(Level.INFO, "Failed to choose a leaseholder for group, will try again later {0}", name);
-            return false;
-        }
-
-        assert candidate != null;
-
-        return assignLeaseholder(name, candidate);
-    }
+//    public boolean refreshLeaseholder(String name) {
+//        Group group = groups.get(name);
+//
+//        if (group == null)
+//            throw new IllegalArgumentException("Group not found " + name);
+//
+//        NodeId cur = group.getLeaseHolder();
+//
+//        NodeId candidate = getLeaseHolder(name);
+//
+//        if (candidate == null) { // Holder not elected or expired.
+//            List<NodeId> nodeIds = new ArrayList<>(group.getNodeState().keySet());
+//
+//            while (!nodeIds.isEmpty()) {
+//                int idx = ThreadLocalRandom.current().nextInt(nodeIds.size());
+//
+//                NodeId nodeId = nodeIds.get(idx);
+//
+//                Node node = topology.getNode(nodeId);
+//
+//                if (node == null) {
+//                    nodeIds.remove(idx);
+//                    group.setState(nodeId, State.OFFLINE);
+//                    continue;
+//                } else if (group.getNodeState().get(nodeId) == State.OFFLINE) {
+//                    group.setState(nodeId, State.CATCHINGUP); // Node is back again.
+//                }
+//
+//                candidate = nodeId; // Found operational node.
+//                break;
+//            }
+//        } else {
+//            candidate = cur; // Try to re-elect previous holder.
+//        }
+//
+//        if (candidate == null) {
+//            LOGGER.log(Level.INFO, "Failed to choose a leaseholder for group, will try again later {0}", name);
+//            return false;
+//        }
+//
+//        assert candidate != null;
+//
+//        return assignLeaseholder(name, candidate);
+//    }
 
     /**
      * Assigns (or refreshes) the proposed node to be a leaseholder for the next (or current) lease range.
@@ -132,20 +134,25 @@ public class Tracker {
             return false;
         }
 
-        Set<NodeId> nodeIds = Collections.unmodifiableSet(topology.getNodeMap().keySet());
-
-        // Update group node states.
-        for (NodeId nodeId : nodeIds) {
-            if (topology.getNode(nodeId) == null)
-                group.setState(nodeId, State.OFFLINE);
-            else if (group.getNodeState().get(nodeId) == State.OFFLINE)
-                group.setState(nodeId, State.CATCHINGUP);
-        }
-
         Timestamp from = clock.now();
 
-        if (group.getNodeState().get(candidate) == State.OFFLINE) // TODO refresh states
+        Map<NodeId, State> nodeState = new HashMap<>();
+
+        // Merge group node states with topology state.
+        for (NodeId nodeId : group.getNodeState().keySet()) {
+            if (topology.getNode(nodeId) == null)
+                nodeState.put(nodeId, State.OFFLINE);
+            else if (group.getNodeState().get(nodeId) == State.OFFLINE)
+                nodeState.put(nodeId, State.CATCHINGUP);
+            else
+                nodeState.put(nodeId, State.OPERATIONAL);
+        }
+
+        if (nodeState.get(candidate) == State.OFFLINE)
             return false; // Can't assign leaseholder on this iteration.
+
+        group.setState(nodeState, from);
+        group.commitState(from, true);
 
         LOGGER.log(Level.INFO, "Assigning(refreshing) a leaseholder: [group={0}, leaseholder={1}, at={2}]", group.getName(), candidate, from);
         group.setLease(from);
@@ -161,7 +168,7 @@ public class Tracker {
         client.send(candidate, request).thenAccept(new Consumer<Response>() {
             @Override
             public void accept(Response response) {
-                for (NodeId nodeId : nodeIds) {
+                for (NodeId nodeId : group.getNodeState().keySet()) {
                     if (nodeId.equals(finalCandidate))
                         continue;
 

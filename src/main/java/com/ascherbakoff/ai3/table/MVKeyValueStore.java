@@ -12,11 +12,11 @@ import java.util.concurrent.atomic.AtomicLong;
 import org.jetbrains.annotations.Nullable;
 
 /**
- * Multi-versioned key-value table.
+ * Multi-versioned key-value store.
  * @param <K>
  * @param <V>
  */
-public class MVKeyValueTable<K extends Comparable<K>, V extends Comparable<V>> {
+public class MVKeyValueStore<K extends Comparable<K>, V extends Comparable<V>> {
     VersionChainRowStore<Map.Entry<K,V>> rowStore;
 
     Map<K, VersionChain<Map.Entry<K,V>>> pk;
@@ -25,7 +25,7 @@ public class MVKeyValueTable<K extends Comparable<K>, V extends Comparable<V>> {
 
     TreeMap<Timestamp, K> pending = new TreeMap<>();
 
-    public MVKeyValueTable() {
+    public MVKeyValueStore() {
         rowStore = new VersionChainRowStore<>();
         pk = new HashMap<>();
     }

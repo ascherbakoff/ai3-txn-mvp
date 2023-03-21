@@ -12,12 +12,12 @@ import java.util.List;
 import java.util.Map.Entry;
 import org.junit.jupiter.api.Test;
 
-public class MVKeyValueTableTest extends BasicTest {
+public class MVKeyValueStoreTest extends BasicTest {
     @Test
     public void testBasic() {
         Clock clock = new Clock(new ManualTimeProvider());
 
-        MVKeyValueTable<Integer, String> t = new MVKeyValueTable<>();
+        MVKeyValueStore<Integer, String> t = new MVKeyValueStore<>();
 
         final int key = 0;
         final String val = "test0";

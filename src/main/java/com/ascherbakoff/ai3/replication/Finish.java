@@ -9,11 +9,13 @@ public class Finish implements Command {
     private final Set<Timestamp> ts;
     private final boolean finish;
     private final Timestamp lwm;
+    private final boolean data;
 
-    public Finish(Set<Timestamp> ts, boolean finish, Timestamp lwm) {
+    public Finish(Set<Timestamp> ts, boolean finish, Timestamp lwm, boolean data) {
         this.ts = ts;
         this.finish = finish;
         this.lwm = lwm;
+        this.data = data;
     }
 
     public boolean finish() {
@@ -31,5 +33,9 @@ public class Finish implements Command {
 
     public Set<Timestamp> getTs() {
         return ts;
+    }
+
+    public boolean data() {
+        return data;
     }
 }

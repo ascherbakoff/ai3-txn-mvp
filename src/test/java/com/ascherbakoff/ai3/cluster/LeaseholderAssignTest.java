@@ -5,60 +5,29 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.junit.jupiter.api.Assertions.fail;
 
 import com.ascherbakoff.ai3.clock.Timestamp;
-import com.ascherbakoff.ai3.util.BasicTest;
-import java.util.ArrayList;
-import java.util.List;
+import com.ascherbakoff.ai3.replication.Put;
 import org.junit.jupiter.api.Test;
 
-public class LeaseholderAssignTest extends BasicTest {
-    public static final String GRP_NAME = "testGrp";
-
+public class LeaseholderAssignTest extends BasicReplicationTest {
     private static System.Logger LOGGER = System.getLogger(LeaseholderAssignTest.class.getName());
-
-    Topology top;
-    Tracker tracker;
-    NodeId alice;
-    NodeId bob;
-
-    private void createCluster() { // TODO remove copy paste
-        top = new Topology();
-
-        alice = new NodeId("alice");
-        top.regiser(new Node(alice, top, clock, GRP_NAME));
-
-        bob = new NodeId("bob");
-        top.regiser(new Node(bob, top, clock, GRP_NAME));
-
-        tracker = new Tracker(top, clock);
-
-        List<NodeId> nodeIds = new ArrayList<>();
-        nodeIds.add(alice);
-        nodeIds.add(bob);
-
-        tracker.register(GRP_NAME, nodeIds);
-    }
 
     @Test
     public void testInitialAssign() {
         createCluster();
 
-        tracker.assignLeaseholder(GRP_NAME, alice);
-
-        assertEquals(alice, tracker.getLeaseHolder(GRP_NAME));
-        for (Node node : top.getNodeMap().values()) {
-            assertTrue(waitForCondition(() -> alice.equals(node.getLeaseHolder(GRP_NAME)), 1_000));
-        }
-
         assertFalse(tracker.assignLeaseholder(GRP_NAME, bob));
+
+        Group group = tracker.group(GRP_NAME);
+
+        for (NodeId nodeId : group.getNodeState().keySet()) {
+            Group locGroup = top.getNode(nodeId).group(GRP_NAME);
+            assertEquals(group, locGroup);
+        }
 
         // Leaseholders shoudn't change.
         assertEquals(alice, tracker.getLeaseHolder(GRP_NAME));
-        for (Node node : top.getNodeMap().values()) {
-            assertTrue(waitForCondition(() -> alice.equals(node.getLeaseHolder(GRP_NAME)), 1_000));
-        }
     }
 
     @Test
@@ -201,7 +170,12 @@ public class LeaseholderAssignTest extends BasicTest {
      * Tests replication group size change.
      */
     @Test
-    public void testReconfiguration() {
-        fail();
+    public void testReconfigurationUpscale() {
+        createCluster();
+
+        tracker.assignLeaseholder(GRP_NAME, alice);
+
+        Node leaseholder = top.getNode(alice);
+        leaseholder.replicate(GRP_NAME, new Put(0, 0)).join();
     }
 }

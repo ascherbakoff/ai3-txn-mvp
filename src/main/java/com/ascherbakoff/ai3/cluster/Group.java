@@ -3,7 +3,8 @@ package com.ascherbakoff.ai3.cluster;
 import com.ascherbakoff.ai3.clock.Timestamp;
 import com.ascherbakoff.ai3.cluster.Tracker.State;
 import com.ascherbakoff.ai3.replication.Replicator;
-import com.ascherbakoff.ai3.table.MVKeyValueTable;
+import com.ascherbakoff.ai3.table.MVKeyValueStore;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Map.Entry;
@@ -15,22 +16,33 @@ import java.util.concurrent.ThreadFactory;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
+/**
+ * Local replication group.
+ */
 public class Group {
     private final String name;
 
-    public Timestamp lwm = Timestamp.min(); // Replication data low watermark.
+    // Replication data low watermark.
+    public Timestamp lwm = Timestamp.min();
 
-    private Map<NodeId, State> nodeState = new HashMap<>();
+    // Group state.
+    public @Nullable Timestamp pendingEpoch;
+    public @Nullable Timestamp epoch;
+    public @Nullable Map<NodeId, State> pendingNodeState;
+    public @Nullable Map<NodeId, State> nodeState;
 
+    // Replicators for this group. Filled only on leader.
     Map<NodeId, Replicator> replicators = new HashMap<>();
 
-    public MVKeyValueTable<Integer, Integer> table = new MVKeyValueTable<>();
+    // MV store.
+    public MVKeyValueStore<Integer, Integer> store = new MVKeyValueStore<>();
 
+    // Leaseholder state.
     private Timestamp lease;
-
-    public TreeMap<Timestamp, Read> pendingReads = new TreeMap<>();
-
     private @Nullable NodeId leaseHolder;
+
+    // Read requests, waiting for LWM.
+    public TreeMap<Timestamp, Read> pendingReads = new TreeMap<>();
 
     public Group(String name) {
         this.name = name;
@@ -57,11 +69,27 @@ public class Group {
     }
 
     public Map<NodeId, State> getNodeState() {
-        return nodeState;
+        return nodeState == null ? Collections.emptyMap() : nodeState;
     }
 
-    public void setState(NodeId nodeId, State state) {
-        nodeState.put(nodeId, state);
+    public void setState(Map<NodeId, State> nodeState, Timestamp from) {
+        this.pendingNodeState = new HashMap<>(nodeState);
+        this.pendingEpoch = from;
+    }
+
+    public boolean commitState(Timestamp from, boolean finish) {
+        if (!from.equals(pendingEpoch))
+            return false;
+
+        if (finish) {
+            nodeState = pendingNodeState;
+            epoch = pendingEpoch;
+        } else {
+            pendingNodeState = null;
+            pendingEpoch = null;
+        }
+
+        return true;
     }
 
     public ExecutorService executorService = Executors.newSingleThreadExecutor(new ThreadFactory() {
@@ -122,7 +150,7 @@ public class Group {
         this.lwm = lwm;
         NavigableMap<Timestamp, Read> head = pendingReads.headMap(lwm, true);
         for (Entry<Timestamp, Read> e : head.entrySet()) {
-            Integer val = table.get(e.getValue().getKey(), e.getKey());
+            Integer val = store.get(e.getValue().getKey(), e.getKey());
             e.getValue().getFut().complete(val);
         }
 

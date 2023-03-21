@@ -11,7 +11,6 @@ import com.ascherbakoff.ai3.replication.Replicator;
 import com.ascherbakoff.ai3.replication.Replicator.Inflight;
 import com.ascherbakoff.ai3.replication.Replicator.State;
 import com.ascherbakoff.ai3.replication.Request;
-import com.ascherbakoff.ai3.util.BasicTest;
 import java.lang.System.Logger.Level;
 import java.util.ArrayList;
 import java.util.List;
@@ -25,9 +24,7 @@ import org.junit.jupiter.api.Test;
 /**
  * The leasholder is a standalone node.
  */
-public class ReplicationGroup3NodesTest extends BasicTest {
-    public static final String GRP_NAME = "testGrp";
-
+public class ReplicationGroup3NodesTest extends BasicReplicationTest {
     private static System.Logger LOGGER = System.getLogger(ReplicationGroup3NodesTest.class.getName());
 
     Topology top;
@@ -37,38 +34,9 @@ public class ReplicationGroup3NodesTest extends BasicTest {
     NodeId charlie;
     NodeId leader;
 
-    private void createCluster() {
-        top = new Topology();
-
-        alice = new NodeId("alice");
-        top.regiser(new Node(alice, top, clock, GRP_NAME));
-
-        bob = new NodeId("bob");
-        top.regiser(new Node(bob, top, clock, GRP_NAME));
-
-        charlie = new NodeId("charlie");
-        top.regiser(new Node(charlie, top, clock, GRP_NAME));
-
-        List<NodeId> nodeIds = new ArrayList<>();
-        nodeIds.add(alice);
-        nodeIds.add(bob);
-        nodeIds.add(charlie);
-
-        leader = alice;
-
-        tracker = new Tracker(top, clock);
-        tracker.register(GRP_NAME, nodeIds);
-        tracker.assignLeaseholder(GRP_NAME, leader);
-
-        waitLeaseholder(leader);
-    }
-
-    private void waitLeaseholder(NodeId nodeId) {
-        assertEquals(nodeId, tracker.getLeaseHolder(GRP_NAME));
-
-        for (Node node : top.getNodeMap().values()) {
-            assertTrue(waitForCondition(() -> nodeId.equals(node.getLeaseHolder(GRP_NAME)), 1_000));
-        }
+    @Override
+    protected void createCluster() {
+        createCluster(3);
     }
 
     @Test

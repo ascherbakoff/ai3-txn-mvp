@@ -13,7 +13,6 @@ import com.ascherbakoff.ai3.replication.Replicate;
 import com.ascherbakoff.ai3.replication.Replicator;
 import com.ascherbakoff.ai3.replication.Replicator.Inflight;
 import com.ascherbakoff.ai3.replication.Request;
-import com.ascherbakoff.ai3.util.BasicTest;
 import java.lang.System.Logger.Level;
 import java.util.ArrayList;
 import java.util.List;
@@ -28,54 +27,8 @@ import org.junit.jupiter.api.Test;
 /**
  * The leasholder is a standalone node.
  */
-public class ReplicationGroup2NodesTest extends BasicTest {
-    public static final String GRP_NAME = "testGrp";
-
+public class ReplicationGroup2NodesTest extends BasicReplicationTest {
     private static System.Logger LOGGER = System.getLogger(ReplicationGroup2NodesTest.class.getName());
-
-    Topology top;
-    Tracker tracker;
-    NodeId alice;
-    NodeId bob;
-    NodeId leader;
-
-    private void createCluster() {
-        top = new Topology();
-
-        alice = new NodeId("alice");
-        top.regiser(new Node(alice, top, clock, GRP_NAME));
-
-        bob = new NodeId("bob");
-        top.regiser(new Node(bob, top, clock, GRP_NAME));
-
-        List<NodeId> nodeIds = new ArrayList<>();
-        nodeIds.add(alice);
-        nodeIds.add(bob);
-
-        leader = alice;
-
-        tracker = new Tracker(top, clock);
-        tracker.register(GRP_NAME, nodeIds);
-        tracker.assignLeaseholder(GRP_NAME, leader); // TODO fail request if group not started.
-
-        waitLeaseholder(leader);
-    }
-
-    private void waitLeaseholder(NodeId nodeId) {
-        assertEquals(nodeId, tracker.getLeaseHolder(GRP_NAME));
-
-        Timestamp ts = tracker.clock().get();
-
-        for (Node node : top.getNodeMap().values()) {
-            assertTrue(waitForCondition(() -> {
-                NodeId leaseHolder = node.getLeaseHolder(GRP_NAME);
-                Timestamp lease = node.getLease(GRP_NAME);
-                if (leaseHolder == null || lease == null)
-                    return false;
-                return nodeId.equals(leaseHolder) && ts.compareTo(lease) >= 0;
-            }, 1_000));
-        }
-    }
 
     @Test
     public void testBasicReplication() throws InterruptedException {
@@ -330,7 +283,7 @@ public class ReplicationGroup2NodesTest extends BasicTest {
 
         // Re-elect.
         assertTrue(tracker.assignLeaseholder(GRP_NAME, bob));
-        waitLeaseholder(bob);
+        waitLeaseholder(bob, tracker, top, GRP_NAME);
 
         toBob.client().unblock(r -> true);
 
@@ -363,8 +316,8 @@ public class ReplicationGroup2NodesTest extends BasicTest {
 
         adjustClocks(Tracker.LEASE_DURATION / 2);
 
-        tracker.refreshLeaseholder(GRP_NAME);
-        waitLeaseholder(leader);
+        tracker.assignLeaseholder(GRP_NAME, leader);
+        waitLeaseholder(leader, tracker, top, GRP_NAME);
 
         adjustClocks(Tracker.LEASE_DURATION / 2 + Tracker.MAX_CLOCK_SKEW);
 

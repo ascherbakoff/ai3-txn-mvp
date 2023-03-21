@@ -2,6 +2,7 @@ package com.ascherbakoff.ai3.cluster;
 
 import com.ascherbakoff.ai3.clock.Clock;
 import com.ascherbakoff.ai3.clock.Timestamp;
+import com.ascherbakoff.ai3.replication.Configure;
 import com.ascherbakoff.ai3.replication.Finish;
 import com.ascherbakoff.ai3.replication.Lease;
 import com.ascherbakoff.ai3.replication.Put;
@@ -19,6 +20,8 @@ import java.util.Map.Entry;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.jetbrains.annotations.Nullable;
@@ -44,13 +47,12 @@ public class Node {
 
     private final Topology top;
 
-    public Node(NodeId nodeId, Topology top, Clock clock, String... groups) {
+    private final ExecutorService commonSvc = Executors.newSingleThreadExecutor();
+
+    public Node(NodeId nodeId, Topology top, Clock clock) {
         this.nodeId = nodeId;
         this.top = top;
         this.clock = clock;
-        for (String group : groups) {
-            this.groups.put(group, new Group(group));
-        }
     }
 
     public void start() {
@@ -68,7 +70,13 @@ public class Node {
     public CompletableFuture<Response> accept(Request request) {
         CompletableFuture<Response> resp = new CompletableFuture<>();
 
-        groups.get(request.getGrp()).executorService.execute(() -> {
+        // Create unitialized group. TODO Any request targeting such group must be ignored.
+        if (groups.get(request.getGrp()) == null) {
+            this.groups.put(request.getGrp(), new Group(request.getGrp()));
+        }
+
+        ExecutorService svc = groups.get(request.getGrp()).executorService;
+        svc.execute(() -> {
             // Update logical clocks.
             clock.onRequest(request.getTs());
 
@@ -80,12 +88,15 @@ public class Node {
 
     public void visit(Replicate replicate, Request request, CompletableFuture<Response> resp) {
         Group grp = groups.get(request.getGrp());
+        assert grp != null; // Created on before request processing.
 
         Timestamp now = clock.now();
-        if (grp == null) {
+
+        if (grp.epoch == null) {
             resp.complete(new Response(now, -1));
             return;
         }
+        // TODO validate epoch.
 
         // Validates if a request fits the lease window.
         if (!grp.validLease(now, request.getSender())) {
@@ -106,8 +117,11 @@ public class Node {
         Object data = replicate.getData();
         if (data instanceof Put) {
             Put put = (Put) data;
-            grp.table.put(put.getKey(), put.getValue(), request.getTs());
+            grp.store.put(put.getKey(), put.getValue(), request.getTs());
             resp.complete(new Response(now));
+        } else if (data instanceof Configure) {
+            Configure configure = (Configure) data;
+            grp.setState(configure.getNodeState(), request.getTs());
         } else {
             resp.complete(new Response(now, -1));
         }
@@ -121,7 +135,11 @@ public class Node {
             grp.setLwm(finish.getLwm());
         }
 
-        grp.table.finish(finish.getTs(), finish.finish());
+        if (finish.data()) {
+            grp.store.finish(finish.getTs(), finish.finish());
+        } else {
+            grp.commitState(finish.getTs().iterator().next(), finish.finish());
+        }
     }
 
     public void visit(Lease lease, Request request, CompletableFuture<Response> resp) {
@@ -137,12 +155,13 @@ public class Node {
             grp.setLwm(sync.getLwm()); // Ignore stale sync requests - this is safe.
         }
 
-        grp.table.commit(sync.getLwm());
+        grp.store.commit(sync.getLwm());
         resp.complete(new Response(Node.this.clock.now()));
     }
 
     public boolean refresh(Timestamp now, String grp, Timestamp leaseStart, NodeId leaseholder, Map<NodeId, Tracker.State> nodeState) {
         Group group = this.groups.get(grp);
+        assert group != null;
 
         Timestamp prev = group.getLease();
 
@@ -154,9 +173,9 @@ public class Node {
 
         group.setLeaseHolder(leaseholder);
         group.setLease(leaseStart);
-        for (Entry<NodeId, Tracker.State> entry : nodeState.entrySet()) {
-            group.setState(entry.getKey(), entry.getValue());
-        }
+
+        group.setState(nodeState, now);
+        group.commitState(now, true);
 
         clock.onRequest(leaseStart); // Sync clocks to lease.
 
@@ -219,7 +238,7 @@ public class Node {
      * @param put The command.
      * @return The result.
      */
-    public CompletableFuture<Timestamp> replicate(String grp, Put put) {
+    public CompletableFuture<Timestamp> replicate(String grp, Object payload) {
         Group group = groups.get(grp);
 
         Timestamp now = clock.now(); // Used as tx id.
@@ -253,9 +272,9 @@ public class Node {
                 request.setTs(now);
                 request.setSender(nodeId);
                 request.setGrp(grp);
-                request.setPayload(new Replicate(replicator.getLwm(), put));
+                request.setPayload(new Replicate(replicator.getLwm(), payload));
 
-                Inflight inflight = replicator.send(request);
+                Inflight inflight = replicator.send(request, payload instanceof Put);
 
                 // This future is completed from node's worker thread
                 inflight.ioFuture().whenCompleteAsync((resp, ex) -> {
@@ -354,7 +373,7 @@ public class Node {
                 group.pendingReads.put(ts, new Read(key, fut));
                 return;
             } else {
-                Integer val = group.table.get(key, ts);
+                Integer val = group.store.get(key, ts);
                 fut.complete(val);
             }
         });
