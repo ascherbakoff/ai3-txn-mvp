@@ -4,13 +4,11 @@ import com.ascherbakoff.ai3.clock.Clock;
 import com.ascherbakoff.ai3.clock.Timestamp;
 import com.ascherbakoff.ai3.replication.Lease;
 import com.ascherbakoff.ai3.replication.Request;
-import com.ascherbakoff.ai3.replication.Response;
 import com.ascherbakoff.ai3.replication.RpcClient;
 import java.lang.System.Logger.Level;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.function.Consumer;
 import org.jetbrains.annotations.Nullable;
 
 public class Tracker {
@@ -154,7 +152,7 @@ public class Tracker {
         group.setState(nodeState, from);
         group.commitState(from, true);
 
-        LOGGER.log(Level.INFO, "Assigning(refreshing) a leaseholder: [group={0}, leaseholder={1}, at={2}]", group.getName(), candidate, from);
+        LOGGER.log(Level.INFO, "Assigning a leaseholder: [group={0}, leaseholder={1}, at={2}]", group.getName(), candidate, from);
         group.setLease(from);
         group.setLeaseHolder(candidate);
 
@@ -165,18 +163,15 @@ public class Tracker {
         request.setPayload(new Lease(name, from, candidate, group.getNodeState()));
 
         // Send to all alive nodes.
-        client.send(candidate, request).thenAccept(new Consumer<Response>() {
-            @Override
-            public void accept(Response response) {
-                for (NodeId nodeId : group.getNodeState().keySet()) {
-                    if (nodeId.equals(finalCandidate))
-                        continue;
+        client.send(candidate, request).thenAccept(response -> {
+            for (NodeId nodeId : group.getNodeState().keySet()) {
+                if (nodeId.equals(finalCandidate))
+                    continue;
 
-                    if (group.getNodeState().get(nodeId) == State.OFFLINE)
-                        continue;
+                if (group.getNodeState().get(nodeId) == State.OFFLINE)
+                    continue;
 
-                    client.send(nodeId, request);
-                }
+                client.send(nodeId, request);
             }
         });
 
