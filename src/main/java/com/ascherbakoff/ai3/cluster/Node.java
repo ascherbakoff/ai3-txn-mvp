@@ -2,6 +2,8 @@ package com.ascherbakoff.ai3.cluster;
 
 import com.ascherbakoff.ai3.clock.Clock;
 import com.ascherbakoff.ai3.clock.Timestamp;
+import com.ascherbakoff.ai3.replication.Collect;
+import com.ascherbakoff.ai3.replication.CollectResponse;
 import com.ascherbakoff.ai3.replication.Configure;
 import com.ascherbakoff.ai3.replication.Finish;
 import com.ascherbakoff.ai3.replication.Lease;
@@ -122,6 +124,7 @@ public class Node {
         } else if (data instanceof Configure) {
             Configure configure = (Configure) data;
             grp.setState(configure.getNodeState(), request.getTs());
+            resp.complete(new Response(now));
         } else {
             resp.complete(new Response(now, -1));
         }
@@ -159,6 +162,12 @@ public class Node {
         resp.complete(new Response(Node.this.clock.now()));
     }
 
+    public void visit(Collect collect, Request request, CompletableFuture<Response> resp) {
+        Group grp = groups.get(request.getGrp());
+
+        resp.complete(new CollectResponse(grp.lwm, Node.this.clock.now()));
+    }
+
     public boolean refresh(Timestamp now, String grp, Timestamp leaseStart, NodeId leaseholder, Map<NodeId, Tracker.State> nodeState) {
         Group group = this.groups.get(grp);
         assert group != null;
@@ -170,6 +179,8 @@ public class Node {
 
         if (prev != null && leaseStart.compareTo(prev.adjust(Tracker.LEASE_DURATION)) < 0 && !leaseholder.equals(group.getLeaseHolder())) // Ignore stale updates, except refresh for current leaseholder. TODO test
             return false;
+
+        // TODO validate if the node can be leaseholder by collecting lwm from alive nodes.
 
         group.setLeaseHolder(leaseholder);
         group.setLease(leaseStart);

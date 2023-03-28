@@ -56,7 +56,7 @@ public class BasicReplicationTest extends BasicTest {
 
         tracker = new Tracker(top, clock);
         tracker.register(GRP_NAME, nodeIds);
-        tracker.assignLeaseholder(GRP_NAME, leader);
+        tracker.assignLeaseholder(GRP_NAME, leader).join();
 
         waitLeaseholder(leader, tracker, top, GRP_NAME);
     }

@@ -1,0 +1,4 @@
+schema compat is not transitive, example:
+create int x
+drop x
+create string x default 'qqq'

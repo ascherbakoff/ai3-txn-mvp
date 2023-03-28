@@ -115,13 +115,22 @@ public class Group {
         if (!name.equals(group.name)) {
             return false;
         }
-        if (!nodeState.equals(group.nodeState)) {
+        if (lwm != null ? !lwm.equals(group.lwm) : group.lwm != null) {
+            return false;
+        }
+        if (pendingEpoch != null ? !pendingEpoch.equals(group.pendingEpoch) : group.pendingEpoch != null) {
+            return false;
+        }
+        if (epoch != null ? !epoch.equals(group.epoch) : group.epoch != null) {
+            return false;
+        }
+        if (pendingNodeState != null ? !pendingNodeState.equals(group.pendingNodeState) : group.pendingNodeState != null) {
+            return false;
+        }
+        if (nodeState != null ? !nodeState.equals(group.nodeState) : group.nodeState != null) {
             return false;
         }
         if (lease != null ? !lease.equals(group.lease) : group.lease != null) {
-            return false;
-        }
-        if (leaseHolder != null ? !leaseHolder.equals(group.leaseHolder) : group.leaseHolder != null) {
             return false;
         }
 
@@ -130,11 +139,7 @@ public class Group {
 
     @Override
     public int hashCode() {
-        int result = name.hashCode();
-        result = 31 * result + nodeState.hashCode();
-        result = 31 * result + (lease != null ? lease.hashCode() : 0);
-        result = 31 * result + (leaseHolder != null ? leaseHolder.hashCode() : 0);
-        return result;
+        return name.hashCode();
     }
 
     public boolean validLease(Timestamp at, NodeId leaseHolder) {

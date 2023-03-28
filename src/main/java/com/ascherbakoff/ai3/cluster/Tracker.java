@@ -2,13 +2,20 @@ package com.ascherbakoff.ai3.cluster;
 
 import com.ascherbakoff.ai3.clock.Clock;
 import com.ascherbakoff.ai3.clock.Timestamp;
+import com.ascherbakoff.ai3.replication.Collect;
+import com.ascherbakoff.ai3.replication.CollectResponse;
 import com.ascherbakoff.ai3.replication.Lease;
 import com.ascherbakoff.ai3.replication.Request;
 import com.ascherbakoff.ai3.replication.RpcClient;
 import java.lang.System.Logger.Level;
+import java.util.Collection;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Map.Entry;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 import org.jetbrains.annotations.Nullable;
 
 public class Tracker {
@@ -114,7 +121,7 @@ public class Tracker {
      * @param candidate The candidate.
      * @return Assignment future.
      */
-    public boolean assignLeaseholder(String name, NodeId candidate) {
+    public CompletableFuture<Void> assignLeaseholder(String name, NodeId candidate) {
         Group group = groups.get(name);
 
         if (group == null)
@@ -129,7 +136,7 @@ public class Tracker {
                     group.getName(),
                     group.getLeaseHolder(),
                     candidate);
-            return false;
+            return CompletableFuture.failedFuture(new Exception("Cannot assign lease because previous lease is still active"));
         }
 
         Timestamp from = clock.now();
@@ -147,35 +154,92 @@ public class Tracker {
         }
 
         if (nodeState.get(candidate) == State.OFFLINE)
-            return false; // Can't assign leaseholder on this iteration.
+            return CompletableFuture.failedFuture(new Exception("Candidate is offline")); // Can't assign leaseholder on this iteration.
 
-        group.setState(nodeState, from);
-        group.commitState(from, true);
+        Map<NodeId, Timestamp> lwms = Collections.synchronizedMap(new HashMap<>());
 
-        LOGGER.log(Level.INFO, "Assigning a leaseholder: [group={0}, leaseholder={1}, at={2}]", group.getName(), candidate, from);
-        group.setLease(from);
-        group.setLeaseHolder(candidate);
+        CompletableFuture<Void> fut = new CompletableFuture<>();
 
-        NodeId finalCandidate = candidate;
-        Request request = new Request();
-        request.setGrp(name);
-        request.setTs(from);
-        request.setPayload(new Lease(name, from, candidate, group.getNodeState()));
+        for (Entry<NodeId, State> entry : nodeState.entrySet()) {
+            Request request = new Request();
+            request.setGrp(name);
+            request.setTs(from);
+            request.setPayload(new Collect());
 
-        // Send to all alive nodes.
-        client.send(candidate, request).thenAccept(response -> {
-            for (NodeId nodeId : group.getNodeState().keySet()) {
-                if (nodeId.equals(finalCandidate))
-                    continue;
+            client.send(entry.getKey(), request).thenAccept(response -> {
+                CollectResponse cr = (CollectResponse) response;
 
-                if (group.getNodeState().get(nodeId) == State.OFFLINE)
-                    continue;
+                lwms.put(entry.getKey(), cr.getLwm());
 
-                client.send(nodeId, request);
-            }
-        });
+                // Collect response from majority.
+                if (lwms.size() >= nodeState.size() / 2 + 1) {
+                    int oks = 0;
 
-        return true;
+                    for (Timestamp value : lwms.values()) {
+                        if (value != null)
+                            oks++;
+                    }
+
+                    // Fail attempt if can't collect enough lwms.
+                    if (oks == nodeState.size() / 2 + 1) {
+                        Timestamp ts = Timestamp.min();
+
+                        // Find max.
+                        for (Timestamp value : lwms.values()) {
+                            if (value != null) {
+                                if (value.compareTo(ts) > 0)
+                                    ts = value;
+                            }
+                        }
+
+                        // Candidate must be in the max list, otherwise fail attempt.
+                        for (Entry<NodeId, Timestamp> entry0 : lwms.entrySet()) {
+                            if (entry0.getKey() == candidate && !entry0.getValue().equals(ts)) {
+                                fut.completeExceptionally(new Exception("Cannot assign leaseholder because it is not up to date node")); // TODO codes
+                                return;
+                            }
+                        }
+
+                        LOGGER.log(Level.INFO, "Collected lwms: [group={0}, leaseholder={1}, max={2}]", group.getName(), candidate, ts);
+
+                        group.setState(nodeState, from);
+                        group.commitState(from, true);
+
+                        LOGGER.log(Level.INFO, "Assigning a leaseholder: [group={0}, leaseholder={1}, at={2}]", group.getName(), candidate,
+                                from);
+                        group.setLease(from);
+                        group.setLeaseHolder(candidate);
+
+                        fut.complete(null); // TODO this can be optimized by committing(reverting) state only on reply or timeout from candidate.
+
+                        NodeId finalCandidate = candidate;
+                        Request request2 = new Request();
+                        request2.setGrp(name);
+                        request2.setTs(from);
+                        request2.setPayload(new Lease(name, from, candidate, group.getNodeState(), ts));
+
+                        // Send to all alive nodes. Next attempt is only possible after current lease expire.
+                        client.send(candidate, request2).thenAccept(response2 -> {
+                            // TODO attempt can be reverted if a message was definitely not sent.
+                            // TODO check errors
+                            for (NodeId nodeId : group.getNodeState().keySet()) {
+                                if (nodeId.equals(finalCandidate))
+                                    continue;
+
+                                if (group.getNodeState().get(nodeId) == State.OFFLINE)
+                                    continue;
+
+                                client.send(nodeId, request2);
+                            }
+                        });
+                    } else if (lwms.size() == nodeState.size()) {
+                        fut.completeExceptionally(new Exception("Cannot assign a leaseholder because majority not available"));
+                    }
+                }
+            });
+        }
+
+        return fut;
     }
 
     public @Nullable NodeId getLeaseHolder(String grpName) {

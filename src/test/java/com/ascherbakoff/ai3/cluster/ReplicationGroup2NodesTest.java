@@ -15,7 +15,6 @@ import com.ascherbakoff.ai3.replication.Replicator.Inflight;
 import com.ascherbakoff.ai3.replication.Request;
 import java.lang.System.Logger.Level;
 import java.util.ArrayList;
-import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.CountDownLatch;
@@ -282,7 +281,7 @@ public class ReplicationGroup2NodesTest extends BasicReplicationTest {
         adjustClocks(Tracker.LEASE_DURATION / 2 + Tracker.MAX_CLOCK_SKEW);
 
         // Re-elect.
-        assertTrue(tracker.assignLeaseholder(GRP_NAME, bob));
+        tracker.assignLeaseholder(GRP_NAME, bob).join();
         waitLeaseholder(bob, tracker, top, GRP_NAME);
 
         toBob.client().unblock(r -> true);
@@ -328,7 +327,7 @@ public class ReplicationGroup2NodesTest extends BasicReplicationTest {
 
     /**
      * 1. One of replication messages is delayed infinitely.
-     * <p>Expected result: operation is failed after some timeout, closing the gap on all replicators.
+     * <p>Expected result: operation is failed after some timeout, closing the gap on affected replicator.
      * Note: not closing gaps leads to prevention of safeTime propagation.
      */
     @Test
