@@ -428,6 +428,42 @@ public class ReplicationGroup2NodesTest extends BasicReplicationTest {
         fail();
     }
 
+    @Test
+    public void testAssignNoMajority() {
+        createCluster();
+
+        adjustClocks(Tracker.LEASE_DURATION / 2 + Tracker.MAX_CLOCK_SKEW);
+
+        assertNotNull(top.getNodeMap().remove(bob));
+
+        tracker.assignLeaseholder(GRP_NAME, leader).join();
+    }
+
+    /**
+     * Tests revering partially replicated operation.
+     *
+     */
+    @Test
+    public void testRollbackNonExisting() {
+        createCluster();
+
+        int val = 0;
+        Node leaseholder = top.getNode(leader);
+        Timestamp ts = leaseholder.replicate(GRP_NAME, new Put(val, val)).join();// Init replicators.
+
+        for (Node value : top.getNodeMap().values()) {
+            assertEquals(val, value.localGet(GRP_NAME, val, ts).join());
+        }
+
+        Replicator toBob = leaseholder.group(GRP_NAME).replicators.get(bob);
+        toBob.client().block(request -> request.getPayload() instanceof Replicate);
+
+        val++;
+        CompletableFuture<Timestamp> fut = leaseholder.replicate(GRP_NAME, new Put(val, val));
+        assertTrue(waitForCondition(() -> toBob.client().blocked().size() == 1, 1_000));
+        assertThrows(CompletionException.class, () -> fut.join());
+    }
+
     private void validate(int val) {
         assertEquals(val, top.getNode(leader).localGet(GRP_NAME, val, top.getNode(alice).group(GRP_NAME).lwm).join());
         assertEquals(val, top.getNode(leader).localGet(GRP_NAME, val, top.getNode(bob).group(GRP_NAME).lwm).join());

@@ -158,7 +158,6 @@ public class Node {
             grp.setLwm(sync.getLwm()); // Ignore stale sync requests - this is safe.
         }
 
-        grp.store.commit(sync.getLwm());
         resp.complete(new Response(Node.this.clock.now()));
     }
 

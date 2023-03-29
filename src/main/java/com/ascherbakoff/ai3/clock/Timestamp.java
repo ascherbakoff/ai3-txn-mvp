@@ -1,5 +1,6 @@
 package com.ascherbakoff.ai3.clock;
 
+import java.util.UUID;
 import org.jetbrains.annotations.Nullable;
 
 public class Timestamp implements Comparable<Timestamp> {
@@ -69,5 +70,9 @@ public class Timestamp implements Comparable<Timestamp> {
     @Override
     public String toString() {
         return "[" + physical + ":" + counter + "]";
+    }
+
+    public UUID toUUID() {
+        return new UUID(physical(), counter());
     }
 }

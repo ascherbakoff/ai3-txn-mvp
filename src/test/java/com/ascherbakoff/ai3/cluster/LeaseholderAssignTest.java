@@ -145,6 +145,19 @@ public class LeaseholderAssignTest extends BasicReplicationTest {
     }
 
     /**
+     * Tests if a non leader is attempting to replicate.
+     */
+    @Test
+    public void testNonLeaderReplication() {
+        createCluster();
+
+        Node leaseholder = top.getNode(alice);
+        leaseholder.replicate(GRP_NAME, new Put(0, 0)).join();
+
+        top.getNode(bob).replicate(GRP_NAME, new Put(0, 0)).join();
+    }
+
+    /**
      * Tests replication group size change.
      */
     @Test

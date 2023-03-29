@@ -161,4 +161,12 @@ public class Group {
 
         head.clear();
     }
+
+    public int size() {
+        return nodeState.size();
+    }
+
+    public int majority() {
+        return size() / 2 + 1;
+    }
 }

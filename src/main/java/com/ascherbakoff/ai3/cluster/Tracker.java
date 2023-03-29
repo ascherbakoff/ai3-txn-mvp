@@ -5,17 +5,17 @@ import com.ascherbakoff.ai3.clock.Timestamp;
 import com.ascherbakoff.ai3.replication.Collect;
 import com.ascherbakoff.ai3.replication.CollectResponse;
 import com.ascherbakoff.ai3.replication.Lease;
+import com.ascherbakoff.ai3.replication.Replicator;
 import com.ascherbakoff.ai3.replication.Request;
 import com.ascherbakoff.ai3.replication.RpcClient;
 import java.lang.System.Logger.Level;
-import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 import org.jetbrains.annotations.Nullable;
 
 public class Tracker {
@@ -166,80 +166,94 @@ public class Tracker {
             request.setTs(from);
             request.setPayload(new Collect());
 
-            client.send(entry.getKey(), request).thenAccept(response -> {
-                CollectResponse cr = (CollectResponse) response;
+            if (nodeState.get(entry.getKey()) == State.OFFLINE) {
+                callback(lwms, entry.getKey(), null, nodeState, from, group, candidate, fut);
+            } else {
+                client.send(entry.getKey(), request).orTimeout(Replicator.TIMEOUT_SEC, TimeUnit.SECONDS).thenAccept(response -> {
+                    CollectResponse cr = (CollectResponse) response;
 
-                lwms.put(entry.getKey(), cr.getLwm());
-
-                // Collect response from majority.
-                if (lwms.size() >= nodeState.size() / 2 + 1) {
-                    int oks = 0;
-
-                    for (Timestamp value : lwms.values()) {
-                        if (value != null)
-                            oks++;
-                    }
-
-                    // Fail attempt if can't collect enough lwms.
-                    if (oks == nodeState.size() / 2 + 1) {
-                        Timestamp ts = Timestamp.min();
-
-                        // Find max.
-                        for (Timestamp value : lwms.values()) {
-                            if (value != null) {
-                                if (value.compareTo(ts) > 0)
-                                    ts = value;
-                            }
-                        }
-
-                        // Candidate must be in the max list, otherwise fail attempt.
-                        for (Entry<NodeId, Timestamp> entry0 : lwms.entrySet()) {
-                            if (entry0.getKey() == candidate && !entry0.getValue().equals(ts)) {
-                                fut.completeExceptionally(new Exception("Cannot assign leaseholder because it is not up to date node")); // TODO codes
-                                return;
-                            }
-                        }
-
-                        LOGGER.log(Level.INFO, "Collected lwms: [group={0}, leaseholder={1}, max={2}]", group.getName(), candidate, ts);
-
-                        group.setState(nodeState, from);
-                        group.commitState(from, true);
-
-                        LOGGER.log(Level.INFO, "Assigning a leaseholder: [group={0}, leaseholder={1}, at={2}]", group.getName(), candidate,
-                                from);
-                        group.setLease(from);
-                        group.setLeaseHolder(candidate);
-
-                        fut.complete(null); // TODO this can be optimized by committing(reverting) state only on reply or timeout from candidate.
-
-                        NodeId finalCandidate = candidate;
-                        Request request2 = new Request();
-                        request2.setGrp(name);
-                        request2.setTs(from);
-                        request2.setPayload(new Lease(name, from, candidate, group.getNodeState(), ts));
-
-                        // Send to all alive nodes. Next attempt is only possible after current lease expire.
-                        client.send(candidate, request2).thenAccept(response2 -> {
-                            // TODO attempt can be reverted if a message was definitely not sent.
-                            // TODO check errors
-                            for (NodeId nodeId : group.getNodeState().keySet()) {
-                                if (nodeId.equals(finalCandidate))
-                                    continue;
-
-                                if (group.getNodeState().get(nodeId) == State.OFFLINE)
-                                    continue;
-
-                                client.send(nodeId, request2);
-                            }
-                        });
-                    } else if (lwms.size() == nodeState.size()) {
-                        fut.completeExceptionally(new Exception("Cannot assign a leaseholder because majority not available"));
-                    }
-                }
-            });
+                    // TODO report cause.
+                    callback(lwms, entry.getKey(), cr.getLwm(), nodeState, from, group, candidate, fut);
+                }).exceptionally(err -> {
+                    callback(lwms, entry.getKey(), null, nodeState, from, group, candidate, fut);
+                    return null; // TODO report cause.
+                });
+            }
         }
 
         return fut;
+    }
+
+    private void callback(Map<NodeId, Timestamp> lwms, NodeId nodeId, @Nullable Timestamp lwm, Map<NodeId, State> nodeState, Timestamp from, Group group, NodeId candidate, CompletableFuture<Void> fut) {
+        lwms.put(nodeId, lwm);
+
+        // Collect response from majority. TODO this can be refactored to a collectFromMajority abstraction.
+        if (lwms.size() >= group.majority()) {
+            int succ = 0;
+
+            for (Timestamp value : lwms.values()) {
+                if (value != null)
+                    succ++;
+            }
+
+            // All replies are received.
+            if (lwms.size() == group.size() && succ < group.majority()) {
+                fut.completeExceptionally(new Exception("Cannot assign a leaseholder because majority not available"));
+                return;
+            }
+
+            // Fail attempt if can't collect enough lwms.
+            if (succ == group.majority()) {
+                Timestamp ts = Timestamp.min();
+
+                // Find max.
+                for (Timestamp value : lwms.values()) {
+                    if (value != null) {
+                        if (value.compareTo(ts) > 0)
+                            ts = value;
+                    }
+                }
+
+                // Candidate must be in the max list, otherwise fail attempt.
+                for (Entry<NodeId, Timestamp> entry0 : lwms.entrySet()) {
+                    if (entry0.getKey() == candidate && !entry0.getValue().equals(ts)) {
+                        fut.completeExceptionally(new Exception("Cannot assign leaseholder because it is not up-to-date node")); // TODO error codes
+                        return;
+                    }
+                }
+
+                LOGGER.log(Level.INFO, "Collected lwms: [group={0}, leaseholder={1}, max={2}]", group.getName(), candidate, ts);
+
+                group.setState(nodeState, from);
+                group.commitState(from, true);
+
+                LOGGER.log(Level.INFO, "Assigning a leaseholder: [group={0}, leaseholder={1}, at={2}]", group.getName(), candidate, from);
+                group.setLease(from);
+                group.setLeaseHolder(candidate);
+
+                fut.complete(null); // TODO this can be optimized by committing(reverting) state only on reply or timeout from candidate.
+
+                Request request2 = new Request();
+                request2.setGrp(group.getName());
+                request2.setTs(from);
+                request2.setPayload(new Lease(group.getName(), from, candidate, group.getNodeState(), ts));
+
+                // Send to all alive nodes. Next attempt is only possible after current lease expire.
+                client.send(candidate, request2).thenAccept(response2 -> {
+                    // TODO attempt can be reverted for a faster retry if a message was definitely not sent.
+                    // TODO check errors
+                    for (NodeId nodeId0 : group.getNodeState().keySet()) {
+                        if (nodeId0.equals(candidate))
+                            continue;
+
+                        if (group.getNodeState().get(nodeId0) == State.OFFLINE)
+                            continue;
+
+                        client.send(nodeId0, request2);
+                    }
+                });
+            }
+        }
     }
 
     public @Nullable NodeId getLeaseHolder(String grpName) {

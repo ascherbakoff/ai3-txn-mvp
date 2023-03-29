@@ -12,8 +12,6 @@ import com.ascherbakoff.ai3.replication.Replicator.Inflight;
 import com.ascherbakoff.ai3.replication.Replicator.State;
 import com.ascherbakoff.ai3.replication.Request;
 import java.lang.System.Logger.Level;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executor;
@@ -26,13 +24,6 @@ import org.junit.jupiter.api.Test;
  */
 public class ReplicationGroup3NodesTest extends BasicReplicationTest {
     private static System.Logger LOGGER = System.getLogger(ReplicationGroup3NodesTest.class.getName());
-
-    Topology top;
-    Tracker tracker;
-    NodeId alice;
-    NodeId bob;
-    NodeId charlie;
-    NodeId leader;
 
     @Override
     protected void createCluster() {
@@ -180,5 +171,37 @@ public class ReplicationGroup3NodesTest extends BasicReplicationTest {
         assertTrue(t1.compareTo(t3) > 0);
         assertTrue(t0.equals(t4));
         assertTrue(t1.equals(t5));
+    }
+
+    /**
+     * Tests if node with non max lwm can become the leader.
+     */
+    @Test
+    public void testAssignNotUpToDate() {
+        createCluster();
+
+        int val = 0;
+        Node leaseholder = top.getNode(leader);
+        Timestamp ts = leaseholder.replicate(GRP_NAME, new Put(val, val)).join();// Init replicators.
+
+        for (Node value : top.getNodeMap().values()) {
+            assertEquals(val, value.localGet(GRP_NAME, val, ts).join());
+        }
+
+//        Replicator toBob = leaseholder.group(GRP_NAME).replicators.get(bob);
+//        toBob.client().block(request -> request.getPayload() instanceof Replicate);
+//
+//        val++;
+//        CompletableFuture<Timestamp> fut = leaseholder.replicate(GRP_NAME, new Put(val, val));
+//        assertTrue(waitForCondition(() -> toBob.client().blocked().size() == 1, 1_000));
+//        assertFalse(fut.isDone());
+//        Request request = toBob.client().blocked().get(0);
+//
+//        Thread.sleep(200);
+//        assertEquals(val, leaseholder.localGet(GRP_NAME, val, request.getTs()).join());
+
+//        adjustClocks(Tracker.LEASE_DURATION / 2 + Tracker.MAX_CLOCK_SKEW);
+//        assertNotNull(top.getNodeMap().remove(bob));
+//        tracker.assignLeaseholder(GRP_NAME, leader).join();
     }
 }
