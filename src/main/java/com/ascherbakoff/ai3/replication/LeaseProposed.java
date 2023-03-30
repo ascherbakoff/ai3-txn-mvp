@@ -7,19 +7,15 @@ import com.ascherbakoff.ai3.cluster.Tracker.State;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 
-public class Lease implements Command {
+public class LeaseProposed implements Command {
     private final String name;
-    private final Timestamp lwm;
     private final Timestamp from;
-    private final NodeId candidate;
     private final Map<NodeId, State> nodeState;
 
-    public Lease(String name, Timestamp from, NodeId candidate, Map<NodeId, State> nodeState, Timestamp lwm) {
+    public LeaseProposed(String name, Timestamp from, Map<NodeId, State> nodeState) {
         this.name = name;
         this.from = from;
-        this.candidate = candidate;
         this.nodeState = nodeState;
-        this.lwm = lwm;
     }
 
     @Override
@@ -34,22 +30,8 @@ public class Lease implements Command {
         return name;
     }
 
-    /**
-     * @return Max LWM in a group.
-     */
-    public Timestamp lwm() {
-        return lwm;
-    }
-
     public Timestamp from() {
         return from;
-    }
-
-    /**
-     * @return Candidate.
-     */
-    public NodeId candidate() {
-        return candidate;
     }
 
     /**
