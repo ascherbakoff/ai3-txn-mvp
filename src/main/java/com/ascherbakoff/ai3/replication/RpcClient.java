@@ -25,6 +25,7 @@ public class RpcClient {
         this.topology = topology;
     }
 
+    // TODO default timeout, refactor
     public CompletableFuture<Response> send(NodeId nodeId, Request request) {
         CompletableFuture<Response> fut = new CompletableFuture<>();
 

@@ -87,7 +87,7 @@ public class MVKeyValueStore<K extends Comparable<K>, V extends Comparable<V>> {
             if (k == null) {
                 // It's possible to receive abort request for not started(non-existing) transaction.
                 if (!finish)
-                    LOGGER.log(Level.WARNING, "Failed to abort non existing transaction with k={0} ts={1}", k, ts);
+                    LOGGER.log(Level.WARNING, "Failed to abort non existing transaction at ts={0}", ts);
 
                 continue;
             }

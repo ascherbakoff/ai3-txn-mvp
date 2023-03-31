@@ -537,7 +537,7 @@ public class Node {
 
             // All replies are received.
             if (lwms.size() == nodeState.size() && succ < majority) {
-                resp.complete(new Response(this.clock.now(), 1, "Cannot assign a leaseholder because majority not available"));
+                resp.complete(new Response(this.clock.now(), 1, "Cannot assign a leaseholder because majority not available (required for max calc)"));
                 return;
             }
 

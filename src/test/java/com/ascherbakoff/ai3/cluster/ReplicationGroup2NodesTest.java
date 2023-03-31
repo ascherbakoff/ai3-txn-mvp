@@ -428,15 +428,18 @@ public class ReplicationGroup2NodesTest extends BasicReplicationTest {
         fail();
     }
 
+    /**
+     * Tests if a leader cannot be assigned because max lwm calculation required majority.
+     */
     @Test
-    public void testAssignNoMajority() {
+    public void testAssignNoMajority() throws InterruptedException {
         createCluster();
 
         adjustClocks(Tracker.LEASE_DURATION / 2 + Tracker.MAX_CLOCK_SKEW);
 
         assertNotNull(top.getNodeMap().remove(bob));
 
-        tracker.assignLeaseholder(GRP_NAME, leader).join();
+        assertThrows(CompletionException.class, () -> tracker.assignLeaseholder(GRP_NAME, leader).join());
     }
 
     /**

@@ -2,8 +2,8 @@ package com.ascherbakoff.ai3.cluster;
 
 import com.ascherbakoff.ai3.clock.Clock;
 import com.ascherbakoff.ai3.clock.Timestamp;
-import com.ascherbakoff.ai3.replication.LeaseGranted;
 import com.ascherbakoff.ai3.replication.LeaseProposed;
+import com.ascherbakoff.ai3.replication.Replicator;
 import com.ascherbakoff.ai3.replication.Request;
 import com.ascherbakoff.ai3.replication.RpcClient;
 import java.lang.System.Logger.Level;
@@ -11,6 +11,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 import org.jetbrains.annotations.Nullable;
 
 public class Tracker {
@@ -158,19 +159,30 @@ public class Tracker {
 
         group.setState(nodeState, from);
 
-        return client.send(candidate, request).thenAccept(response -> {
-            // TODO handle redirects to highest LWM node.
+        CompletableFuture<Void> fut = new CompletableFuture<>();
+
+        client.send(candidate, request).orTimeout(Replicator.TIMEOUT_SEC, TimeUnit.SECONDS).whenComplete((response, err) -> {
+            // TODO handle redirect.
             group.commitState(from, response.getReturn() == 0); // Commit or rollback depending on result.
 
-            if (response.getReturn() != 0) {
+            if (err == null && response.getReturn() != 0) {
                 LOGGER.log(Level.INFO, "Leaseholder rejected: [group={0}, leaseholder={1}, at={2}, reason={}]", group.getName(), candidate, from, response.getMessage());
-                throw new RuntimeException(response.getMessage());
+                fut.completeExceptionally(new RuntimeException(response.getMessage()));
+                return;
             }
 
-            LOGGER.log(Level.INFO, "Leaseholder assigned: [group={0}, leaseholder={1}, at={2}]", group.getName(), candidate, from);
+            if (err != null) {
+                LOGGER.log(Level.INFO, "Leaseholder assigned with error: [group={0}, leaseholder={1}, at={2}, err={3}]", group.getName(), candidate, from, err.getMessage());
+            } else {
+                LOGGER.log(Level.INFO, "Leaseholder assigned: [group={0}, leaseholder={1}, at={2}]", group.getName(), candidate, from);
+            }
+
             group.setLease(from);
             group.setLeaseHolder(candidate);
+            fut.complete(null);
         });
+
+        return fut;
     }
 
     public @Nullable NodeId getLeaseHolder(String grpName) {

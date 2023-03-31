@@ -1,24 +1,16 @@
 package com.ascherbakoff.ai3.cluster;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.ascherbakoff.ai3.clock.Timestamp;
 import com.ascherbakoff.ai3.cluster.Tracker.State;
 import com.ascherbakoff.ai3.replication.Configure;
 import com.ascherbakoff.ai3.replication.Put;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
-import java.util.concurrent.TimeUnit;
-import java.util.function.Consumer;
-import java.util.function.Function;
 import org.junit.jupiter.api.Test;
 
 public class LeaseholderAssignTest extends BasicReplicationTest {
@@ -84,7 +76,7 @@ public class LeaseholderAssignTest extends BasicReplicationTest {
 
         adjustClocks(Tracker.LEASE_DURATION + Tracker.MAX_CLOCK_SKEW);
 
-        tracker.assignLeaseholder(GRP_NAME, bob);
+        tracker.assignLeaseholder(GRP_NAME, bob).join();
         waitLeaseholder(bob, tracker, top, GRP_NAME);
     }
 
@@ -154,7 +146,7 @@ public class LeaseholderAssignTest extends BasicReplicationTest {
         Node leaseholder = top.getNode(alice);
         leaseholder.replicate(GRP_NAME, new Put(0, 0)).join();
 
-        top.getNode(bob).replicate(GRP_NAME, new Put(0, 0)).join();
+        assertThrows(CompletionException.class, () -> top.getNode(bob).replicate(GRP_NAME, new Put(0, 0)).join());
     }
 
     /**
