@@ -11,11 +11,6 @@ public class CollectResponse extends Response {
         this.lwm = lwm;
     }
 
-    public CollectResponse(Timestamp ts, int ret) {
-        super(ts, ret);
-        this.lwm = null;
-    }
-
     public @Nullable Timestamp getLwm() {
         return lwm; // null on error.
     }

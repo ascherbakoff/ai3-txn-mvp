@@ -158,24 +158,19 @@ public class Tracker {
 
         group.setState(nodeState, from);
 
-        CompletableFuture<Void> fut = new CompletableFuture<>();
-
-        client.send(candidate, request).thenAccept(response -> {
+        return client.send(candidate, request).thenAccept(response -> {
             // TODO handle redirects to highest LWM node.
             group.commitState(from, response.getReturn() == 0); // Commit or rollback depending on result.
 
             if (response.getReturn() != 0) {
                 LOGGER.log(Level.INFO, "Leaseholder rejected: [group={0}, leaseholder={1}, at={2}, reason={}]", group.getName(), candidate, from, response.getMessage());
-                fut.completeExceptionally(new Exception(response.getMessage())); // TODO error code
-                return;
+                throw new RuntimeException(response.getMessage());
             }
 
             LOGGER.log(Level.INFO, "Leaseholder assigned: [group={0}, leaseholder={1}, at={2}]", group.getName(), candidate, from);
             group.setLease(from);
             group.setLeaseHolder(candidate);
         });
-
-        return fut;
     }
 
     public @Nullable NodeId getLeaseHolder(String grpName) {

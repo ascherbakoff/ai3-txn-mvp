@@ -171,53 +171,19 @@ public class Node {
     public void visit(Collect collect, Request request, CompletableFuture<Response> resp) {
         Group grp = groups.get(request.getGrp());
 
-        resp.complete(new CollectResponse(grp.lwm, Node.this.clock.now()));
+        resp.complete(new CollectResponse(grp.lwm, clock.now()));
     }
 
-    public void grant(String grp, Timestamp from, NodeId leaseholder, Map<NodeId, Tracker.State> nodeState, CompletableFuture<Response> resp) {
-        Timestamp now = Node.this.clock.now();
+    private void propose(String grp, Timestamp leaseStart, Map<NodeId, Tracker.State> nodeState, CompletableFuture<Response> resp) {
+        LOGGER.log(Level.INFO, "[grp={0}, from={1}, nodeId={2}]", grp, leaseStart, nodeId);
 
-        Group group = this.groups.get(grp);
-        assert group != null;
-
-        Timestamp prev = group.getLease();
-
-        if (prev != null && from.compareTo(prev) < 0) {// Ignore stale updates.
-            resp.complete(new Response(now, 1, "Lease request ignored (outdated)")); // TODO error code
-            return;
-        }
-
-        if (prev != null && from.compareTo(prev.adjust(Tracker.LEASE_DURATION)) < 0 && !leaseholder.equals(group.getLeaseHolder())) {// Ignore stale updates, except refresh for current leaseholder. TODO test
-            resp.complete(new Response(now, 1, "Lease request ignored (wrong candidate)")); // TODO error code
-            return;
-        }
-
-        group.setLeaseHolder(leaseholder);
-        group.setLease(from);
-
-        group.setState(nodeState, now);
-        group.commitState(now, true);
-
-        if (id().equals(leaseholder)) {
-            LOGGER.log(Level.INFO, "I am the leasholder: [interval={0}:{1}, at={2}, nodeId={3}]", from, from.adjust(Tracker.LEASE_DURATION), now, nodeId);
-        } else {
-            LOGGER.log(Level.INFO, "Refresh leasholder: [interval={0}:{1}, at={2}], nodeId={3}", from, from.adjust(Tracker.LEASE_DURATION), now, nodeId);
-        }
-
-        assert group.validLease(now, leaseholder);
-
-        resp.complete(new Response(now));
-    }
-
-    public void propose(String grp, Timestamp leaseStart, Map<NodeId, Tracker.State> nodeState,
-            CompletableFuture<Response> resp) {
         NodeId leaseholder = nodeId; // Try assign myself.
         Group group = this.groups.get(grp);
         assert group != null;
 
         Timestamp prev = group.getLease();
 
-        Timestamp now = Node.this.clock.now();
+        Timestamp now = clock.now();
 
         if (prev != null && leaseStart.compareTo(prev) < 0) { // Ignore stale updates.
             resp.complete(new Response(now, 1, "Lease request ignored (outdated)")); // TODO error code
@@ -252,6 +218,44 @@ public class Node {
                 });
             }
         }
+    }
+
+    private void grant(String grp, Timestamp from, NodeId leaseholder, Map<NodeId, Tracker.State> nodeState, CompletableFuture<Response> resp) {
+        Timestamp now = clock.now();
+
+        Group group = this.groups.get(grp);
+        assert group != null;
+
+        Timestamp prev = group.getLease();
+
+        if (prev != null && from.compareTo(prev) < 0) {// Ignore stale updates.
+            resp.complete(new Response(now, 1, "Lease request ignored (outdated)")); // TODO error code
+            return;
+        }
+
+        if (prev != null && from.compareTo(prev.adjust(Tracker.LEASE_DURATION)) < 0 && !leaseholder.equals(group.getLeaseHolder())) {// Ignore stale updates, except refresh for current leaseholder. TODO test
+            resp.complete(new Response(now, 1, "Lease request ignored (wrong candidate)")); // TODO error code
+            return;
+        }
+
+        group.setLeaseHolder(leaseholder);
+        group.setLease(from);
+
+        assert group.validLease(from, leaseholder);
+
+        // Safe to commit topology on leader election.
+        group.setState(nodeState, now);
+        group.commitState(now, true);
+
+        if (id().equals(leaseholder)) {
+            LOGGER.log(Level.INFO, "I am the leasholder: [interval={0}:{1}, at={2}, nodeId={3}]", from, from.adjust(Tracker.LEASE_DURATION), now, nodeId);
+        } else {
+            LOGGER.log(Level.INFO, "Refresh leasholder: [interval={0}:{1}, at={2}], nodeId={3}", from, from.adjust(Tracker.LEASE_DURATION), now, nodeId);
+        }
+
+        assert group.validLease(now, leaseholder);
+
+        resp.complete(new Response(now));
     }
 
     public Group group(String grp) {
@@ -522,7 +526,8 @@ public class Node {
         lwms.put(nodeId, lwm);
 
         // Collect response from majority. TODO this can be refactored to a collectFromMajority abstraction.
-        if (lwms.size() >= group.majority()) {
+        int majority = nodeState.size() / 2 + 1;
+        if (lwms.size() >= majority) {
             int succ = 0;
 
             for (Timestamp value : lwms.values()) {
@@ -531,13 +536,13 @@ public class Node {
             }
 
             // All replies are received.
-            if (lwms.size() == group.size() && succ < group.majority()) {
+            if (lwms.size() == nodeState.size() && succ < majority) {
                 resp.complete(new Response(this.clock.now(), 1, "Cannot assign a leaseholder because majority not available"));
                 return;
             }
 
             // Fail attempt if can't collect enough lwms.
-            if (succ == group.majority()) {
+            if (succ == majority) {
                 Timestamp ts = Timestamp.min();
 
                 // Find max.
@@ -558,31 +563,16 @@ public class Node {
 
                 LOGGER.log(Level.INFO, "Collected lwms: [group={0}, leaseholder={1}, max={2}]", group.getName(), candidate, ts);
 
-                group.setState(nodeState, from);
-                group.commitState(from, true);
+                resp.complete(new Response(now));
 
-                LOGGER.log(Level.INFO, "Leaseholder assigned: [group={0}, leaseholder={1}, at={2}]", group.getName(), candidate, from);
-                group.setLease(from);
-                group.setLeaseHolder(candidate);
-
-                if (id().equals(candidate)) {
-                    LOGGER.log(Level.INFO, "I am the leasholder: [interval={0}:{1}, at={2}, nodeId={3}]", from, from.adjust(Tracker.LEASE_DURATION), now, nodeId);
-                } else {
-                    LOGGER.log(Level.INFO, "Refresh leasholder: [interval={0}:{1}, at={2}], nodeId={3}", from, from.adjust(Tracker.LEASE_DURATION), now, nodeId);
-                }
-
-                assert group.validLease(from, candidate);
-
+                // Asynchronously propagate the lease.
                 Request request = new Request();
                 request.setGrp(group.getName());
                 request.setTs(now);
-                request.setPayload(new LeaseGranted(group.getName(), from, candidate, group.getNodeState(), ts));
+                request.setPayload(new LeaseGranted(group.getName(), from, candidate, nodeState, ts));
 
                 // Asynchronously notify members.
-                for (NodeId nodeId0 : group.getNodeState().keySet()) {
-                    if (nodeId0.equals(candidate))
-                        continue;
-
+                for (NodeId nodeId0 : nodeState.keySet()) {
                     if (group.getNodeState().get(nodeId0) == Tracker.State.OFFLINE)
                         continue;
 
