@@ -6,9 +6,11 @@ import com.ascherbakoff.ai3.replication.Replicator;
 import com.ascherbakoff.ai3.table.MVKeyValueStore;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.NavigableMap;
+import java.util.Set;
 import java.util.TreeMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -26,10 +28,9 @@ public class Group {
     public Timestamp lwm = Timestamp.min();
 
     // Group state.
-    public @Nullable Timestamp pendingEpoch;
-    public @Nullable Timestamp epoch;
-    public @Nullable Map<NodeId, State> pendingNodeState;
-    public @Nullable Map<NodeId, State> nodeState;
+    public @Nullable Set<NodeId> pendingMembers;
+    public @Nullable Set<NodeId> members;
+    public State state;
 
     // Replicators for this group. Filled only on leader.
     Map<NodeId, Replicator> replicators = new HashMap<>();
@@ -68,26 +69,22 @@ public class Group {
         this.leaseHolder = leaseHolder;
     }
 
-    public Map<NodeId, State> getNodeState() {
-        return nodeState == null ? Collections.emptyMap() : nodeState;
+    public Set<NodeId> getMembers() {
+        return members == null ? Collections.emptySet() : members;
     }
 
-    public void setState(Map<NodeId, State> nodeState, Timestamp from) {
-        this.pendingNodeState = new HashMap<>(nodeState);
-        this.pendingEpoch = from;
+    public void setState(Set<NodeId> members, Timestamp from) {
+        this.pendingMembers = new HashSet<>(members);
     }
 
     public boolean commitState(Timestamp from, boolean finish) {
-        if (!from.equals(pendingEpoch))
-            return false;
-
         if (finish) {
-            nodeState = pendingNodeState;
-            epoch = pendingEpoch;
+            members = pendingMembers;
         } else {
-            pendingNodeState = null;
-            pendingEpoch = null;
+            pendingMembers = null;
         }
+
+        // TODO process local state.
 
         return true;
     }
@@ -115,19 +112,16 @@ public class Group {
         if (!name.equals(group.name)) {
             return false;
         }
+        if (state != null ? !state.equals(group.state) : group.state != null) {
+            return false;
+        }
         if (lwm != null ? !lwm.equals(group.lwm) : group.lwm != null) {
             return false;
         }
-        if (pendingEpoch != null ? !pendingEpoch.equals(group.pendingEpoch) : group.pendingEpoch != null) {
+        if (pendingMembers != null ? !pendingMembers.equals(group.pendingMembers) : group.pendingMembers != null) {
             return false;
         }
-        if (epoch != null ? !epoch.equals(group.epoch) : group.epoch != null) {
-            return false;
-        }
-        if (pendingNodeState != null ? !pendingNodeState.equals(group.pendingNodeState) : group.pendingNodeState != null) {
-            return false;
-        }
-        if (nodeState != null ? !nodeState.equals(group.nodeState) : group.nodeState != null) {
+        if (members != null ? !members.equals(group.members) : group.members != null) {
             return false;
         }
         if (lease != null ? !lease.equals(group.lease) : group.lease != null) {
@@ -163,7 +157,7 @@ public class Group {
     }
 
     public int size() {
-        return nodeState.size();
+        return members.size();
     }
 
     public int majority() {

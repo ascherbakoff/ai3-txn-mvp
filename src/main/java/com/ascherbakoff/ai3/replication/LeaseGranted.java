@@ -5,6 +5,7 @@ import com.ascherbakoff.ai3.cluster.Node;
 import com.ascherbakoff.ai3.cluster.NodeId;
 import com.ascherbakoff.ai3.cluster.Tracker.State;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 
 public class LeaseGranted implements Command {
@@ -12,13 +13,13 @@ public class LeaseGranted implements Command {
     private final Timestamp lwm;
     private final Timestamp from;
     private final NodeId candidate;
-    private final Map<NodeId, State> nodeState;
+    private final Set<NodeId> members;
 
-    public LeaseGranted(String name, Timestamp from, NodeId candidate, Map<NodeId, State> nodeState, Timestamp lwm) {
+    public LeaseGranted(String name, Timestamp from, NodeId candidate, Set<NodeId> members, Timestamp lwm) {
         this.name = name;
         this.from = from;
         this.candidate = candidate;
-        this.nodeState = nodeState;
+        this.members = members;
         this.lwm = lwm;
     }
 
@@ -55,7 +56,7 @@ public class LeaseGranted implements Command {
     /**
      * @return Node state.
      */
-    public Map<NodeId, State> nodeState() {
-        return nodeState;
+    public Set<NodeId> members() {
+        return members;
     }
 }

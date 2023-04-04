@@ -2,12 +2,14 @@ package com.ascherbakoff.ai3.cluster;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 
 import com.ascherbakoff.ai3.clock.Timestamp;
+import com.ascherbakoff.ai3.replication.Configure;
 import com.ascherbakoff.ai3.replication.Put;
 import com.ascherbakoff.ai3.replication.Replicate;
 import com.ascherbakoff.ai3.replication.Replicator;
@@ -15,6 +17,7 @@ import com.ascherbakoff.ai3.replication.Replicator.Inflight;
 import com.ascherbakoff.ai3.replication.Request;
 import java.lang.System.Logger.Level;
 import java.util.ArrayList;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.CountDownLatch;
@@ -40,14 +43,17 @@ public class ReplicationGroup2NodesTest extends BasicReplicationTest {
     }
 
     @Test
-    public void testIdlePropagation() {
+    public void testIdlePropagation() throws InterruptedException {
         createCluster();
 
         Node leaseholder = top.getNode(leader);
-        leaseholder.replicate(GRP_NAME, new Put(0, 0)).join();
+        int val = 0;
+        leaseholder.replicate(GRP_NAME, new Put(val, val)).join();
         adjustClocks(20);
 
-        validateAtTimestamp(0, clock.get());
+        Timestamp ts = leaseholder.sync(GRP_NAME).join();
+
+        validateAtTimestamp(val, ts);
     }
 
     @Test
@@ -281,8 +287,8 @@ public class ReplicationGroup2NodesTest extends BasicReplicationTest {
         adjustClocks(Tracker.LEASE_DURATION / 2 + Tracker.MAX_CLOCK_SKEW);
 
         // Re-elect.
-        tracker.assignLeaseholder(GRP_NAME, bob).join();
-        waitLeaseholder(bob, tracker, top, GRP_NAME);
+        Timestamp ts = tracker.assignLeaseholder(GRP_NAME, bob, nodeIds).join();
+        waitLeaseholder(ts, bob, tracker, top, GRP_NAME);
 
         toBob.client().unblock(r -> true);
 
@@ -300,8 +306,6 @@ public class ReplicationGroup2NodesTest extends BasicReplicationTest {
         createCluster();
 
         Node leaseholder = top.getNode(leader);
-        Timestamp oldLease = tracker.getLease(GRP_NAME);
-        assertNotNull(oldLease);
         int val = 0;
         leaseholder.replicate(GRP_NAME, new Put(val, val)).join(); // Init replicators.
 
@@ -315,8 +319,8 @@ public class ReplicationGroup2NodesTest extends BasicReplicationTest {
 
         adjustClocks(Tracker.LEASE_DURATION / 2);
 
-        tracker.assignLeaseholder(GRP_NAME, leader);
-        waitLeaseholder(leader, tracker, top, GRP_NAME);
+        Timestamp ts = tracker.assignLeaseholder(GRP_NAME, leader, nodeIds).join();
+        waitLeaseholder(ts, leader, tracker, top, GRP_NAME);
 
         adjustClocks(Tracker.LEASE_DURATION / 2 + Tracker.MAX_CLOCK_SKEW);
 
@@ -335,8 +339,6 @@ public class ReplicationGroup2NodesTest extends BasicReplicationTest {
         createCluster();
 
         Node leaseholder = top.getNode(leader);
-        Timestamp oldLease = tracker.getLease(GRP_NAME);
-        assertNotNull(oldLease);
         int val = 0;
         leaseholder.replicate(GRP_NAME, new Put(val, val)).join(); // Init replicators.
 
@@ -439,7 +441,7 @@ public class ReplicationGroup2NodesTest extends BasicReplicationTest {
 
         assertNotNull(top.getNodeMap().remove(bob));
 
-        assertThrows(CompletionException.class, () -> tracker.assignLeaseholder(GRP_NAME, leader).join());
+        assertThrows(CompletionException.class, () -> tracker.assignLeaseholder(GRP_NAME, leader, nodeIds).join());
     }
 
     /**
@@ -467,6 +469,37 @@ public class ReplicationGroup2NodesTest extends BasicReplicationTest {
         assertThrows(CompletionException.class, () -> fut.join());
     }
 
+    /**
+     * Tests replication group size change.
+     */
+    @Test
+    public void testReconfigurationUpscale() {
+        createCluster();
+
+        Node leaseholder = top.getNode(alice);
+        leaseholder.replicate(GRP_NAME, new Put(0, 0)).join();
+    }
+
+    @Test
+    public void testReconfigurationDownscale() throws InterruptedException {
+        createCluster();
+
+        Node leaseholder = top.getNode(alice);
+        leaseholder.replicate(GRP_NAME, new Put(0, 0)).join();
+
+        Set<NodeId> newMembers = Set.of(alice);
+
+        // Replicate to majority.
+        leaseholder.replicate(GRP_NAME, new Configure(newMembers)).join();
+
+        for (NodeId nodeId : newMembers) {
+            Group locGroup = top.getNode(nodeId).group(GRP_NAME);
+            assertTrue(waitForCondition(() -> newMembers.equals(locGroup.getMembers()), 1000), nodeId.toString());
+        }
+
+        assertNotEquals(newMembers, top.getNode(alice).group(GRP_NAME).getMembers());
+    }
+
     private void validate(int val) {
         assertEquals(val, top.getNode(leader).localGet(GRP_NAME, val, top.getNode(alice).group(GRP_NAME).lwm).join());
         assertEquals(val, top.getNode(leader).localGet(GRP_NAME, val, top.getNode(bob).group(GRP_NAME).lwm).join());
@@ -476,7 +509,6 @@ public class ReplicationGroup2NodesTest extends BasicReplicationTest {
     }
 
     private void validateAtTimestamp(int val, Timestamp ts) {
-        assertEquals(val, top.getNode(leader).localGet(GRP_NAME, val, ts).join());
         assertEquals(val, top.getNode(leader).localGet(GRP_NAME, val, ts).join());
     }
 }

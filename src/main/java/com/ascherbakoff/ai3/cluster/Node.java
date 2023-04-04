@@ -79,7 +79,7 @@ public class Node {
 
         // Create unitialized group. TODO Any request targeting such group must be ignored.
         if (groups.get(request.getGrp()) == null) {
-            this.groups.put(request.getGrp(), new Group(request.getGrp()));
+            this.groups.putIfAbsent(request.getGrp(), new Group(request.getGrp())); // TODO leaking threads
         }
 
         ExecutorService svc = groups.get(request.getGrp()).executorService;
@@ -98,12 +98,6 @@ public class Node {
         assert grp != null; // Created on before request processing.
 
         Timestamp now = clock.now();
-
-        if (grp.epoch == null) {
-            resp.complete(new Response(now, 1, "Group topology is not initialized"));
-            return;
-        }
-        // TODO validate epoch.
 
         // Validates if a request fits the lease window.
         if (!grp.validLease(now, request.getSender())) {
@@ -128,7 +122,7 @@ public class Node {
             resp.complete(new Response(now));
         } else if (data instanceof Configure) {
             Configure configure = (Configure) data;
-            grp.setState(configure.getNodeState(), request.getTs());
+            grp.setState(configure.getMembers(), request.getTs());
             resp.complete(new Response(now));
         } else {
             resp.complete(new Response(now, 1, "Unsupported command"));
@@ -151,11 +145,11 @@ public class Node {
     }
 
     public void visit(LeaseGranted lease, Request request, CompletableFuture<Response> resp) {
-        grant(lease.name(), lease.from(), lease.candidate(), lease.nodeState(), resp);
+        grant(lease.name(), lease.from(), lease.candidate(), lease.members(), resp);
     }
 
     public void visit(LeaseProposed lease, Request request, CompletableFuture<Response> resp) {
-        propose(lease.name(), lease.from(), lease.nodeState(), resp);
+        propose(lease.name(), lease.from(), lease.members(), resp);
     }
 
     public void visit(Sync sync, Request request, CompletableFuture<Response> resp) {
@@ -165,7 +159,7 @@ public class Node {
             grp.setLwm(sync.getLwm()); // Ignore stale sync requests - this is safe.
         }
 
-        resp.complete(new Response(Node.this.clock.now()));
+        resp.complete(new Response(clock.now()));
     }
 
     public void visit(Collect collect, Request request, CompletableFuture<Response> resp) {
@@ -174,7 +168,7 @@ public class Node {
         resp.complete(new CollectResponse(grp.lwm, clock.now()));
     }
 
-    private void propose(String grp, Timestamp leaseStart, Map<NodeId, Tracker.State> nodeState, CompletableFuture<Response> resp) {
+    private void propose(String grp, Timestamp leaseStart, Set<NodeId> members, CompletableFuture<Response> resp) {
         LOGGER.log(Level.INFO, "[grp={0}, from={1}, nodeId={2}]", grp, leaseStart, nodeId);
 
         NodeId leaseholder = nodeId; // Try assign myself.
@@ -197,30 +191,30 @@ public class Node {
 
         Map<NodeId, Timestamp> lwms = Collections.synchronizedMap(new HashMap<>());
 
-        for (Entry<NodeId, Tracker.State> entry : nodeState.entrySet()) {
+        for (NodeId nodeId : members) {
             Request request = new Request();
             request.setGrp(grp);
             request.setTs(now);
             request.setPayload(new Collect());
 
-            if (top.getNodeMap().get(entry.getKey()) == null) {
-                callback(now, lwms, entry.getKey(), null, nodeState, leaseStart, group, leaseholder, resp);
+            if (top.getNodeMap().get(nodeId) == null) {
+                callback(now, lwms, nodeId, null, members, leaseStart, group, leaseholder, resp);
             } else {
-                client.send(entry.getKey(), request).orTimeout(Replicator.TIMEOUT_SEC, TimeUnit.SECONDS).thenAccept(response -> {
+                client.send(nodeId, request).orTimeout(Replicator.TIMEOUT_SEC, TimeUnit.SECONDS).thenAccept(response -> {
                     clock.onResponse(response.getTs());
                     CollectResponse cr = (CollectResponse) response;
 
                     // TODO report cause.
-                    callback(now, lwms, entry.getKey(), cr.getLwm(), nodeState, leaseStart, group, leaseholder, resp);
+                    callback(now, lwms, nodeId, cr.getLwm(), members, leaseStart, group, leaseholder, resp);
                 }).exceptionally(err -> {
-                    callback(now, lwms, entry.getKey(), null, nodeState, leaseStart, group, leaseholder, resp);
+                    callback(now, lwms, nodeId, null, members, leaseStart, group, leaseholder, resp);
                     return null; // TODO report cause.
                 });
             }
         }
     }
 
-    private void grant(String grp, Timestamp from, NodeId leaseholder, Map<NodeId, Tracker.State> nodeState, CompletableFuture<Response> resp) {
+    private void grant(String grp, Timestamp from, NodeId leaseholder, Set<NodeId> members, CompletableFuture<Response> resp) {
         Timestamp now = clock.now();
 
         Group group = this.groups.get(grp);
@@ -244,7 +238,7 @@ public class Node {
         assert group.validLease(from, leaseholder);
 
         // Safe to commit topology on leader election.
-        group.setState(nodeState, now);
+        group.setState(members, now);
         group.commitState(now, true);
 
         if (id().equals(leaseholder)) {
@@ -318,7 +312,7 @@ public class Node {
 
         // TODO implement batching by concatenating queue elements into single message.
         group.executorService.submit(() -> {
-            Set<NodeId> nodeIds = group.getNodeState().keySet();
+            Set<NodeId> nodeIds = group.getMembers();
 
             AtomicInteger completed = new AtomicInteger(0);
             AtomicBoolean localDone = new AtomicBoolean();
@@ -449,10 +443,10 @@ public class Node {
         return fut;
     }
 
-    public CompletableFuture<Void> sync(String grp) {
+    public CompletableFuture<Timestamp> sync(String grp) {
         Group group = groups.get(grp);
 
-        CompletableFuture<Void> res = new CompletableFuture<>();
+        CompletableFuture<Timestamp> res = new CompletableFuture<>();
 
         group.executorService.submit(() -> {
             Timestamp now = clock.now();
@@ -461,7 +455,7 @@ public class Node {
                 return;
             }
 
-            Set<NodeId> nodeIds = new HashSet<>(group.getNodeState().keySet());
+            Set<NodeId> nodeIds = new HashSet<>(group.getMembers());
 
             AtomicInteger acks = new AtomicInteger(0);
 
@@ -482,7 +476,7 @@ public class Node {
                 if (id.equals(nodeId)) {
                     int val = acks.incrementAndGet();
                     if (val == nodeIds.size())
-                        res.complete(null);
+                        res.complete(now);
                     continue;
                 }
 
@@ -496,7 +490,7 @@ public class Node {
                 replicator.idleSync(r).thenAccept(resp -> {
                     int val = acks.incrementAndGet();
                     if (val == nodeIds.size())
-                        res.complete(null);
+                        res.complete(now);
                 });
             }
         });
@@ -522,11 +516,11 @@ public class Node {
         }
     }
 
-    private void callback(Timestamp now, Map<NodeId, Timestamp> lwms, NodeId nodeId, @Nullable Timestamp lwm, Map<NodeId, Tracker.State> nodeState, Timestamp from, Group group, NodeId candidate, CompletableFuture<Response> resp) {
+    private void callback(Timestamp now, Map<NodeId, Timestamp> lwms, NodeId nodeId, @Nullable Timestamp lwm, Set<NodeId> members, Timestamp from, Group group, NodeId candidate, CompletableFuture<Response> resp) {
         lwms.put(nodeId, lwm);
 
         // Collect response from majority. TODO this can be refactored to a collectFromMajority abstraction.
-        int majority = nodeState.size() / 2 + 1;
+        int majority = members.size() / 2 + 1;
         if (lwms.size() >= majority) {
             int succ = 0;
 
@@ -536,7 +530,7 @@ public class Node {
             }
 
             // All replies are received.
-            if (lwms.size() == nodeState.size() && succ < majority) {
+            if (lwms.size() == members.size() && succ < majority) {
                 resp.complete(new Response(this.clock.now(), 1, "Cannot assign a leaseholder because majority not available (required for max calc)"));
                 return;
             }
@@ -569,11 +563,11 @@ public class Node {
                 Request request = new Request();
                 request.setGrp(group.getName());
                 request.setTs(now);
-                request.setPayload(new LeaseGranted(group.getName(), from, candidate, nodeState, ts));
+                request.setPayload(new LeaseGranted(group.getName(), from, candidate, members, ts));
 
-                // Asynchronously notify members.
-                for (NodeId nodeId0 : nodeState.keySet()) {
-                    if (group.getNodeState().get(nodeId0) == Tracker.State.OFFLINE)
+                // Asynchronously notify alive members.
+                for (NodeId nodeId0 : members) {
+                    if (top.getNode(nodeId0) == null)
                         continue;
 
                     client.send(nodeId0, request);

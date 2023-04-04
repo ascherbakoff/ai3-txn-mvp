@@ -3,19 +3,18 @@ package com.ascherbakoff.ai3.replication;
 import com.ascherbakoff.ai3.clock.Timestamp;
 import com.ascherbakoff.ai3.cluster.Node;
 import com.ascherbakoff.ai3.cluster.NodeId;
-import com.ascherbakoff.ai3.cluster.Tracker.State;
-import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 
 public class LeaseProposed implements Command {
     private final String name;
     private final Timestamp from;
-    private final Map<NodeId, State> nodeState;
+    private final Set<NodeId> members;
 
-    public LeaseProposed(String name, Timestamp from, Map<NodeId, State> nodeState) {
+    public LeaseProposed(String name, Timestamp from, Set<NodeId> members) {
         this.name = name;
         this.from = from;
-        this.nodeState = nodeState;
+        this.members = members;
     }
 
     @Override
@@ -37,7 +36,7 @@ public class LeaseProposed implements Command {
     /**
      * @return Node state.
      */
-    public Map<NodeId, State> nodeState() {
-        return nodeState;
+    public Set<NodeId> members() {
+        return members;
     }
 }

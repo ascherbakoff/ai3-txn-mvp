@@ -112,6 +112,7 @@ public class Replicator {
 
     public CompletableFuture<Response> idleSync(Request r) {
         return client.send(nodeId, r).thenApply(response -> {
+            System.out.println("idle resp: node=" + node.id() + ", from=" + nodeId + ", ts=" + response.getTs());
             node.clock().onResponse(response.getTs());
             return response;
         });

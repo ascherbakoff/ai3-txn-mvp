@@ -1,12 +1,14 @@
 package com.ascherbakoff.ai3.cluster;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.ascherbakoff.ai3.clock.Timestamp;
 import com.ascherbakoff.ai3.util.BasicTest;
-import java.util.ArrayList;
-import java.util.List;
+import java.util.HashSet;
+import java.util.Set;
+import org.jetbrains.annotations.Nullable;
 
 public class BasicReplicationTest extends BasicTest {
     public static final String GRP_NAME = "testGrp";
@@ -17,20 +19,37 @@ public class BasicReplicationTest extends BasicTest {
     NodeId bob = new NodeId("bob");
     NodeId charlie = new NodeId("charlie");
     NodeId leader;
+    Set<NodeId> nodeIds;
 
-    protected void waitLeaseholder(NodeId nodeId, Tracker tracker, Topology top, String grp) {
-        assertEquals(nodeId, tracker.getLeaseHolder(grp));
-
-        Timestamp ts = tracker.clock().get();
-
+    protected void waitLeaseholder(Timestamp ts, NodeId nodeId, Tracker tracker, Topology top, String grp) {
         for (Node node : top.getNodeMap().values()) {
             assertTrue(waitForCondition(() -> {
                 NodeId leaseHolder = node.getLeaseHolder(grp);
                 Timestamp lease = node.getLease(grp);
                 if (leaseHolder == null || lease == null)
                     return false;
-                return nodeId.equals(leaseHolder) && ts.compareTo(lease) >= 0;
-            }, 1_000), "Failed to wait: nodeId=" + node.id());
+                return nodeId.equals(leaseHolder) && ts.compareTo(lease) == 0;
+            }, 1_000), "Failed to wait for leaseholder: nodeId=" + node.id());
+        }
+    }
+
+    protected void validateLease(@Nullable NodeId leader) {
+        Group grp = null;
+
+        for (NodeId nodeId : nodeIds) {
+            Group locGroup = top.getNode(nodeId).group(GRP_NAME);
+
+            if (leader == null) {
+                assertNull(top.getNode(nodeId).getLeaseHolder(GRP_NAME));
+            } else {
+                assertEquals(leader, top.getNode(nodeId).getLeaseHolder(GRP_NAME));
+            }
+
+            if (grp == null) {
+                grp = locGroup;
+            } else {
+                assertEquals(grp, locGroup);
+            }
         }
     }
 
@@ -43,7 +62,7 @@ public class BasicReplicationTest extends BasicTest {
         top.regiser(new Node(alice, top, clock));
         top.regiser(new Node(bob, top, clock));
 
-        List<NodeId> nodeIds = new ArrayList<>();
+        nodeIds = new HashSet<>();
         nodeIds.add(alice);
         nodeIds.add(bob);
 
@@ -55,9 +74,8 @@ public class BasicReplicationTest extends BasicTest {
         leader = alice;
 
         tracker = new Tracker(top, clock);
-        tracker.register(GRP_NAME, nodeIds);
-        tracker.assignLeaseholder(GRP_NAME, leader).join();
+        Timestamp ts = tracker.assignLeaseholder(GRP_NAME, leader, nodeIds).join();
 
-        waitLeaseholder(leader, tracker, top, GRP_NAME);
+        waitLeaseholder(ts, leader, tracker, top, GRP_NAME);
     }
 }

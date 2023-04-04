@@ -1,15 +1,9 @@
 package com.ascherbakoff.ai3.cluster;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import com.ascherbakoff.ai3.clock.Timestamp;
-import com.ascherbakoff.ai3.cluster.Tracker.State;
-import com.ascherbakoff.ai3.replication.Configure;
 import com.ascherbakoff.ai3.replication.Put;
-import java.util.HashMap;
-import java.util.Map;
 import java.util.concurrent.CompletionException;
 import org.junit.jupiter.api.Test;
 
@@ -20,17 +14,9 @@ public class LeaseholderAssignTest extends BasicReplicationTest {
     public void testInitialAssign() {
         createCluster();
 
-        assertThrows(CompletionException.class, () -> tracker.assignLeaseholder(GRP_NAME, bob).join());
+        assertThrows(CompletionException.class, () -> tracker.assignLeaseholder(GRP_NAME, bob, nodeIds).join());
 
-        Group group = tracker.group(GRP_NAME);
-
-        for (NodeId nodeId : group.getNodeState().keySet()) {
-            Group locGroup = top.getNode(nodeId).group(GRP_NAME);
-            assertEquals(group.nodeState, locGroup.nodeState);
-        }
-
-        // Leaseholders shoudn't change.
-        assertEquals(alice, tracker.getLeaseHolder(GRP_NAME));
+        validateLease(leader);
     }
 
     @Test
@@ -39,19 +25,7 @@ public class LeaseholderAssignTest extends BasicReplicationTest {
 
         adjustClocks(Tracker.LEASE_DURATION);
 
-        // Tracker lease is still active
-        assertEquals(alice, tracker.getLeaseHolder(GRP_NAME));
-        for (Node node : top.getNodeMap().values()) {
-            assertNull(node.getLeaseHolder(GRP_NAME));
-        }
-
-        adjustClocks(Tracker.MAX_CLOCK_SKEW);
-
-        // Tracker lease expires latest.
-        assertNull(tracker.getLeaseHolder(GRP_NAME));
-        for (Node node : top.getNodeMap().values()) {
-            assertNull(node.getLeaseHolder(GRP_NAME));
-        }
+        validateLease(null);
     }
 
     @Test
@@ -61,13 +35,13 @@ public class LeaseholderAssignTest extends BasicReplicationTest {
         adjustClocks(Tracker.LEASE_DURATION / 2);
 
         // Refresh.
-        tracker.assignLeaseholder(GRP_NAME, alice).join();
-        waitLeaseholder(alice, tracker, top, GRP_NAME);
+        Timestamp ts = tracker.assignLeaseholder(GRP_NAME, alice, nodeIds).join();
+        waitLeaseholder(ts, alice, tracker, top, GRP_NAME);
 
         adjustClocks(Tracker.LEASE_DURATION / 2);
 
         // Lease still active after lease duration
-        waitLeaseholder(alice, tracker, top, GRP_NAME);
+        waitLeaseholder(ts, alice, tracker, top, GRP_NAME);
     }
 
     @Test
@@ -76,8 +50,10 @@ public class LeaseholderAssignTest extends BasicReplicationTest {
 
         adjustClocks(Tracker.LEASE_DURATION + Tracker.MAX_CLOCK_SKEW);
 
-        tracker.assignLeaseholder(GRP_NAME, bob).join();
-        waitLeaseholder(bob, tracker, top, GRP_NAME);
+        Timestamp ts = tracker.assignLeaseholder(GRP_NAME, bob, nodeIds).join();
+        waitLeaseholder(ts, bob, tracker, top, GRP_NAME);
+
+        validateLease(bob);
     }
 
     /**
@@ -147,38 +123,5 @@ public class LeaseholderAssignTest extends BasicReplicationTest {
         leaseholder.replicate(GRP_NAME, new Put(0, 0)).join();
 
         assertThrows(CompletionException.class, () -> top.getNode(bob).replicate(GRP_NAME, new Put(0, 0)).join());
-    }
-
-    /**
-     * Tests replication group size change.
-     */
-    @Test
-    public void testReconfigurationUpscale() {
-        createCluster();
-
-        Node leaseholder = top.getNode(alice);
-        leaseholder.replicate(GRP_NAME, new Put(0, 0)).join();
-    }
-
-    @Test
-    public void testReconfigurationDownscale() throws InterruptedException {
-        createCluster();
-
-        Node leaseholder = top.getNode(alice);
-        leaseholder.replicate(GRP_NAME, new Put(0, 0)).join();
-
-        Group group = tracker.group(GRP_NAME);
-        Map<NodeId, State> state = new HashMap<>(group.getNodeState());
-        state.put(bob, State.OFFLINE);
-        group.setState(state, tracker.clock().now());
-
-        Timestamp ts = leaseholder.replicate(GRP_NAME, new Configure(state)).join();
-
-        Thread.sleep(50);
-
-        for (NodeId nodeId : group.getNodeState().keySet()) {
-            Group locGroup = top.getNode(nodeId).group(GRP_NAME);
-            assertEquals(group, locGroup, nodeId.toString());
-        }
     }
 }

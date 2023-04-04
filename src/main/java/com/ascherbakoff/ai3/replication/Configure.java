@@ -1,17 +1,16 @@
 package com.ascherbakoff.ai3.replication;
 
 import com.ascherbakoff.ai3.cluster.NodeId;
-import com.ascherbakoff.ai3.cluster.Tracker.State;
-import java.util.Map;
+import java.util.Set;
 
 public class Configure {
-    private final Map<NodeId, State> nodeState;
+    private final Set<NodeId> members;
 
-    public Configure(Map<NodeId, State> nodeState) {
-        this.nodeState = nodeState;
+    public Configure(Set<NodeId> members) {
+        this.members = members;
     }
 
-    public Map<NodeId, State> getNodeState() {
-        return nodeState;
+    public Set<NodeId> getMembers() {
+        return members;
     }
 }

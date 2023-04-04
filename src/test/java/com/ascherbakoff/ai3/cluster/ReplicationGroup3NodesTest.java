@@ -1,10 +1,11 @@
 package com.ascherbakoff.ai3.cluster;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.ascherbakoff.ai3.clock.Timestamp;
+import com.ascherbakoff.ai3.replication.Configure;
 import com.ascherbakoff.ai3.replication.Put;
 import com.ascherbakoff.ai3.replication.Replicate;
 import com.ascherbakoff.ai3.replication.Replicator;
@@ -12,6 +13,7 @@ import com.ascherbakoff.ai3.replication.Replicator.Inflight;
 import com.ascherbakoff.ai3.replication.Replicator.State;
 import com.ascherbakoff.ai3.replication.Request;
 import java.lang.System.Logger.Level;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executor;
@@ -100,8 +102,6 @@ public class ReplicationGroup3NodesTest extends BasicReplicationTest {
         createCluster();
 
         Node leaseholder = top.getNode(leader);
-        Timestamp oldLease = tracker.getLease(GRP_NAME);
-        assertNotNull(oldLease);
         int val = 0;
         leaseholder.replicate(GRP_NAME, new Put(val, val)).join(); // Init replicators.
 
@@ -204,4 +204,48 @@ public class ReplicationGroup3NodesTest extends BasicReplicationTest {
 //        assertNotNull(top.getNodeMap().remove(bob));
 //        tracker.assignLeaseholder(GRP_NAME, leader).join();
     }
+
+
+    /**
+     * Tests the scenario:
+     * 3 node group, leader was lost.
+     * On next leader election, previos leader was removed from group.
+     */
+    @Test
+    public void testReconfigurationOldLeaderRemoved() {
+
+    }
+
+    /**
+     * Tests replication group size change.
+     */
+    @Test
+    public void testReconfigurationUpscale() {
+        createCluster();
+
+        Node leaseholder = top.getNode(alice);
+        leaseholder.replicate(GRP_NAME, new Put(0, 0)).join();
+    }
+
+    @Test
+    public void testReconfigurationDownscale() throws InterruptedException {
+        createCluster();
+
+        Node leaseholder = top.getNode(alice);
+        leaseholder.replicate(GRP_NAME, new Put(0, 0)).join();
+
+        Set<NodeId> newMembers = Set.of(alice);
+
+        Timestamp ts = leaseholder.replicate(GRP_NAME, new Configure(newMembers)).join();
+
+        Thread.sleep(50); // TODO get rid
+
+        for (NodeId nodeId : newMembers) {
+            Group locGroup = top.getNode(nodeId).group(GRP_NAME);
+            assertEquals(newMembers, locGroup.getMembers(), nodeId.toString());
+        }
+
+        assertNotEquals(newMembers, top.getNode(alice).group(GRP_NAME).getMembers());
+    }
+
 }
