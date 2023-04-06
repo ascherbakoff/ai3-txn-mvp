@@ -431,21 +431,46 @@ public class ReplicationGroup2NodesTest extends BasicReplicationTest {
     }
 
     /**
-     * Tests if a leader cannot be assigned because max lwm calculation required majority.
+     * Tests if a lease can always be refreshed if current holder is available.
      */
     @Test
     public void testAssignNoMajority() throws InterruptedException {
         createCluster();
 
-        adjustClocks(Tracker.LEASE_DURATION / 2 + Tracker.MAX_CLOCK_SKEW);
+        adjustClocks(Tracker.LEASE_DURATION / 2);
 
         assertNotNull(top.getNodeMap().remove(bob));
 
-        assertThrows(CompletionException.class, () -> tracker.assignLeaseholder(GRP_NAME, leader, nodeIds).join());
+        Timestamp ts = tracker.assignLeaseholder(GRP_NAME, leader, nodeIds).join();
+        waitLeaseholder(ts, leader, tracker, top, GRP_NAME);
+
+        validateLease(leader);
+
+        Node leaseholder = top.getNode(leader);
+
+        CompletableFuture<Timestamp> fut = leaseholder.replicate(GRP_NAME, new Put(0, 0));
+        assertThrows(CompletionException.class, () -> fut.join(), "Replication must fail");
     }
 
     /**
-     * Tests revering partially replicated operation.
+     * Tests if a leader can be reassigned to any alive node if replication factor matches group size. Currently this is true for 2 node cluster. Need replication factor support for larger clusters.
+     */
+    @Test
+    public void testReassignNoMajority() {
+        createCluster();
+
+        adjustClocks(Tracker.LEASE_DURATION + Tracker.MAX_CLOCK_SKEW);
+
+        assertNotNull(top.getNodeMap().remove(bob));
+
+        Timestamp ts = tracker.assignLeaseholder(GRP_NAME, leader, nodeIds).join();
+        waitLeaseholder(ts, leader, tracker, top, GRP_NAME);
+
+        validateLease(leader);
+    }
+
+    /**
+     * Tests reverting partially replicated operation.
      *
      */
     @Test

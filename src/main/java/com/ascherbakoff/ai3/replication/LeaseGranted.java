@@ -10,17 +10,15 @@ import java.util.concurrent.CompletableFuture;
 
 public class LeaseGranted implements Command {
     private final String name;
-    private final Timestamp lwm;
     private final Timestamp from;
     private final NodeId candidate;
     private final Set<NodeId> members;
 
-    public LeaseGranted(String name, Timestamp from, NodeId candidate, Set<NodeId> members, Timestamp lwm) {
+    public LeaseGranted(String name, Timestamp from, NodeId candidate, Set<NodeId> members) {
         this.name = name;
         this.from = from;
         this.candidate = candidate;
         this.members = members;
-        this.lwm = lwm;
     }
 
     @Override
@@ -33,13 +31,6 @@ public class LeaseGranted implements Command {
      */
     public String name() {
         return name;
-    }
-
-    /**
-     * @return Max LWM in a group.
-     */
-    public Timestamp lwm() {
-        return lwm;
     }
 
     public Timestamp from() {

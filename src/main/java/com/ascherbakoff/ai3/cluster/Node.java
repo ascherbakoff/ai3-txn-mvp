@@ -184,8 +184,34 @@ public class Node {
             return;
         }
 
-        if (prev != null && leaseStart.compareTo(prev.adjust(Tracker.LEASE_DURATION)) < 0 && !leaseholder.equals(group.getLeaseHolder())) { // Ignore stale updates, except refresh for current leaseholder. TODO test
-            resp.complete(new Response(now, 1, "Lease request ignored (wrong candidate)")); // TODO error code
+        boolean leaseExtended = false;
+
+        if (prev != null && leaseStart.compareTo(prev.adjust(Tracker.LEASE_DURATION)) < 0) { // Ignore stale updates, except refresh for current leaseholder. TODO test
+            if (!leaseholder.equals(group.getLeaseHolder())) {
+                resp.complete(new Response(now, 1, "Lease request ignored (wrong candidate)")); // TODO error code
+                return;
+            }
+
+            leaseExtended = true;
+        }
+
+        if (leaseExtended) {
+            // Asynchronously propagate the lease.
+            Request request = new Request();
+            request.setGrp(group.getName());
+            request.setTs(now);
+            request.setPayload(new LeaseGranted(group.getName(), leaseStart, group.getLeaseHolder(), members));
+
+            resp.complete(new Response(now));
+
+            // Asynchronously notify alive members.
+            for (NodeId nodeId0 : members) {
+                if (top.getNode(nodeId0) == null)
+                    continue;
+
+                client.send(nodeId0, request);
+            }
+
             return;
         }
 
@@ -563,7 +589,7 @@ public class Node {
                 Request request = new Request();
                 request.setGrp(group.getName());
                 request.setTs(now);
-                request.setPayload(new LeaseGranted(group.getName(), from, candidate, members, ts));
+                request.setPayload(new LeaseGranted(group.getName(), from, candidate, members));
 
                 // Asynchronously notify alive members.
                 for (NodeId nodeId0 : members) {

@@ -1,8 +1,12 @@
 package com.ascherbakoff.ai3.cluster;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 
 import com.ascherbakoff.ai3.clock.Timestamp;
 import com.ascherbakoff.ai3.replication.Configure;
@@ -15,6 +19,7 @@ import com.ascherbakoff.ai3.replication.Request;
 import java.lang.System.Logger.Level;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
@@ -188,21 +193,51 @@ public class ReplicationGroup3NodesTest extends BasicReplicationTest {
             assertEquals(val, value.localGet(GRP_NAME, val, ts).join());
         }
 
-//        Replicator toBob = leaseholder.group(GRP_NAME).replicators.get(bob);
-//        toBob.client().block(request -> request.getPayload() instanceof Replicate);
-//
-//        val++;
-//        CompletableFuture<Timestamp> fut = leaseholder.replicate(GRP_NAME, new Put(val, val));
-//        assertTrue(waitForCondition(() -> toBob.client().blocked().size() == 1, 1_000));
-//        assertFalse(fut.isDone());
-//        Request request = toBob.client().blocked().get(0);
-//
-//        Thread.sleep(200);
-//        assertEquals(val, leaseholder.localGet(GRP_NAME, val, request.getTs()).join());
+        Replicator toBob = leaseholder.group(GRP_NAME).replicators.get(bob);
+        toBob.client().block(request -> request.getPayload() instanceof Replicate);
 
-//        adjustClocks(Tracker.LEASE_DURATION / 2 + Tracker.MAX_CLOCK_SKEW);
-//        assertNotNull(top.getNodeMap().remove(bob));
-//        tracker.assignLeaseholder(GRP_NAME, leader).join();
+        val++;
+        CompletableFuture<Timestamp> fut = leaseholder.replicate(GRP_NAME, new Put(val, val));
+        assertTrue(waitForCondition(() -> toBob.client().blocked().size() == 1, 1_000));
+        fut.join(); // The request must succeed on alice and charlie
+    }
+
+    /**
+     * Tests if a lease can always be refreshed if current holder is available.
+     */
+    @Test
+    public void testRefreshNoMajority() {
+        createCluster();
+
+        adjustClocks(Tracker.LEASE_DURATION / 2);
+
+        assertNotNull(top.getNodeMap().remove(bob));
+        assertNotNull(top.getNodeMap().remove(charlie));
+
+        Timestamp ts = tracker.assignLeaseholder(GRP_NAME, leader, nodeIds).join();
+        waitLeaseholder(ts, leader, tracker, top, GRP_NAME);
+
+        validateLease(leader);
+
+        Node leaseholder = top.getNode(leader);
+
+        CompletableFuture<Timestamp> fut = leaseholder.replicate(GRP_NAME, new Put(0, 0));
+        assertThrows(CompletionException.class, () -> fut.join(), "Replication must fail");
+    }
+
+    /**
+     * Tests if a lease can't be reassigned if a majority is not avaiable.
+     */
+    @Test
+    public void testReassignNoMajority() {
+        createCluster();
+
+        adjustClocks(Tracker.LEASE_DURATION + Tracker.MAX_CLOCK_SKEW);
+
+        assertNotNull(top.getNodeMap().remove(bob));
+        assertNotNull(top.getNodeMap().remove(charlie));
+
+        assertThrows(CompletionException.class, () -> tracker.assignLeaseholder(GRP_NAME, leader, nodeIds).join(), "Election must fail");
     }
 
 

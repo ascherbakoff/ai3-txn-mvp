@@ -31,7 +31,10 @@ public class RpcClient {
 
         Node node = topology.getNodeMap().get(nodeId);
 
-        Objects.requireNonNull(node);
+        if (node == null) {
+            fut.completeExceptionally(new Exception("Node is dead: " + nodeId));
+            return fut;
+        }
 
         synchronized (this) {
             if (blockPred != null && blockPred.test(request)) {

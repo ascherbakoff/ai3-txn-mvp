@@ -28,7 +28,7 @@ public class BasicReplicationTest extends BasicTest {
                 Timestamp lease = node.getLease(grp);
                 if (leaseHolder == null || lease == null)
                     return false;
-                return nodeId.equals(leaseHolder) && ts.compareTo(lease) == 0;
+                return nodeId.equals(leaseHolder) && ts.equals(lease);
             }, 1_000), "Failed to wait for leaseholder: nodeId=" + node.id());
         }
     }
@@ -36,13 +36,13 @@ public class BasicReplicationTest extends BasicTest {
     protected void validateLease(@Nullable NodeId leader) {
         Group grp = null;
 
-        for (NodeId nodeId : nodeIds) {
-            Group locGroup = top.getNode(nodeId).group(GRP_NAME);
+        for (Node node : top.getNodeMap().values()) {
+            Group locGroup = node.group(GRP_NAME);
 
             if (leader == null) {
-                assertNull(top.getNode(nodeId).getLeaseHolder(GRP_NAME));
+                assertNull(node.getLeaseHolder(GRP_NAME));
             } else {
-                assertEquals(leader, top.getNode(nodeId).getLeaseHolder(GRP_NAME));
+                assertEquals(leader, node.getLeaseHolder(GRP_NAME));
             }
 
             if (grp == null) {
