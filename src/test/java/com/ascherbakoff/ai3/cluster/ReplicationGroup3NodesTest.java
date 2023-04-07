@@ -240,6 +240,19 @@ public class ReplicationGroup3NodesTest extends BasicReplicationTest {
         assertThrows(CompletionException.class, () -> tracker.assignLeaseholder(GRP_NAME, leader, nodeIds).join(), "Election must fail");
     }
 
+    @Test
+    public void testReassignEmpty() {
+        createCluster();
+
+        adjustClocks(Tracker.LEASE_DURATION + Tracker.MAX_CLOCK_SKEW);
+
+        assertNotNull(top.getNodeMap().remove(alice));
+        assertNotNull(top.getNodeMap().remove(bob));
+        assertNotNull(top.getNodeMap().remove(charlie));
+
+        assertThrows(CompletionException.class, () -> tracker.assignLeaseholder(GRP_NAME, leader, nodeIds).join(), "Can't assign on empty group");
+    }
+
 
     /**
      * Tests the scenario:

@@ -93,9 +93,6 @@ public class Tracker {
      * @return Assignment future, containing lease begin on completion.
      */
     public CompletableFuture<Timestamp> assignLeaseholder(String name, NodeId candidate, Set<NodeId> members) {
-        if (topology.getNode(candidate) == null)
-            return CompletableFuture.failedFuture(new Exception("Candidate is offline")); // Can't assign leaseholder on this iteration.
-
         Timestamp from = clock.now();
 
         Request request = new Request();
@@ -106,6 +103,7 @@ public class Tracker {
         return client.send(candidate, request).orTimeout(Replicator.TIMEOUT_SEC, TimeUnit.SECONDS).handle((response, err) -> {
             // TODO handle redirect.
             if (err == null && response.getReturn() != 0) {
+                // TODO handle response code
                 LOGGER.log(Level.INFO, "Leaseholder rejected: [group={0}, leaseholder={1}, at={2}, reason={3}]", name, candidate, from, response.getMessage());
                 throw new RuntimeException(response.getMessage());
             }

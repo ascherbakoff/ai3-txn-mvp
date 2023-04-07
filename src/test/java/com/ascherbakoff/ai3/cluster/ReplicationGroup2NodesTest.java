@@ -469,6 +469,18 @@ public class ReplicationGroup2NodesTest extends BasicReplicationTest {
         validateLease(leader);
     }
 
+    @Test
+    public void testReassignEmpty() {
+        createCluster();
+
+        adjustClocks(Tracker.LEASE_DURATION + Tracker.MAX_CLOCK_SKEW);
+
+        assertNotNull(top.getNodeMap().remove(alice));
+        assertNotNull(top.getNodeMap().remove(bob));
+
+        assertThrows(CompletionException.class, () -> tracker.assignLeaseholder(GRP_NAME, leader, nodeIds).join(), "Can't assign on empty group");
+    }
+
     /**
      * Tests reverting partially replicated operation.
      *

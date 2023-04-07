@@ -1,5 +1,6 @@
 package com.ascherbakoff.ai3.replication;
 
+import com.ascherbakoff.ai3.clock.Timestamp;
 import com.ascherbakoff.ai3.cluster.Node;
 import com.ascherbakoff.ai3.cluster.NodeId;
 import com.ascherbakoff.ai3.cluster.Topology;
@@ -32,7 +33,7 @@ public class RpcClient {
         Node node = topology.getNodeMap().get(nodeId);
 
         if (node == null) {
-            fut.completeExceptionally(new Exception("Node is dead: " + nodeId));
+            fut.complete(new Response(Timestamp.min(), 1, "Node is dead: " + nodeId));
             return fut;
         }
 

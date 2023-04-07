@@ -543,21 +543,35 @@ public class Node {
     }
 
     private void callback(Timestamp now, Map<NodeId, Timestamp> lwms, NodeId nodeId, @Nullable Timestamp lwm, Set<NodeId> members, Timestamp from, Group group, NodeId candidate, CompletableFuture<Response> resp) {
+        if (resp.isDone())
+            return;
+
         lwms.put(nodeId, lwm);
 
         // Collect response from majority. TODO this can be refactored to a collectFromMajority abstraction.
         int majority = members.size() / 2 + 1;
+        int tolerable = members.size() - majority;
+
+        if (majority == members.size()) { // Handle special case for two-nodes groups. They operate in full sync and can tolerate the loss of one node to remain available.
+            majority = 1;
+            tolerable = 1;
+        }
+
+        assert majority + tolerable == members.size();
+
         if (lwms.size() >= majority) {
             int succ = 0;
+            int err = 0;
 
             for (Timestamp value : lwms.values()) {
                 if (value != null)
                     succ++;
+                else
+                    err++;
             }
 
-            // All replies are received.
-            if (lwms.size() == members.size() && succ < majority) {
-                resp.complete(new Response(this.clock.now(), 1, "Cannot assign a leaseholder because majority not available (required for max calc)"));
+            if (err > tolerable) {
+                resp.complete(new Response(this.clock.now(), 1, "Cannot assign a leaseholder because group is not available (required " + majority + " alive nodes)"));
                 return;
             }
 
