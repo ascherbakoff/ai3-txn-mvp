@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
@@ -507,14 +508,59 @@ public class ReplicationGroup2NodesTest extends BasicReplicationTest {
     }
 
     /**
-     * Tests replication group size change.
+     * Tests if a Put operation can't be committed ahead of pending Configure.
      */
     @Test
-    public void testReconfigurationUpscale() {
+    public void testConfigurePutReorderNotPossible() {
+
+    }
+
+    /**
+     * Tests if a Put operation is rehected if an older Configure failes.
+     */
+    @Test
+    public void testConfigureFailPutFail() {
+
+    }
+
+    /**
+     * Tests replication group size upscale. New node is expected to catch up with operational node.
+     */
+    @Test
+    public void testReconfigurationUpscale() throws InterruptedException {
         createCluster();
 
         Node leaseholder = top.getNode(alice);
-        leaseholder.replicate(GRP_NAME, new Put(0, 0)).join();
+        int val = 0;
+        leaseholder.replicate(GRP_NAME, new Put(val, val)).join();
+
+        Node node = new Node(charlie, top, clock);
+        top.addNode(node);
+
+        Set<NodeId> newMembers = top.getNodeMap().keySet();
+
+        // Make sure new nodes know about leaseholder.
+        Timestamp ts = tracker.assignLeaseholder(GRP_NAME, leader, newMembers).join();
+        waitLeaseholder(ts, leader, tracker, top, GRP_NAME);
+        validateLease(leader, charlie);
+
+        // TODO validate lease
+        assertEquals(Timestamp.min(), top.getNode(charlie).group(GRP_NAME).lwm, "New node is expected to be empty");
+
+        val++;
+        leaseholder.replicate(GRP_NAME, new Put(val, val)).join();
+
+        assertEquals(Timestamp.min(), top.getNode(charlie).group(GRP_NAME).lwm, "LWM should not be propagated");
+        assertTrue(waitForCondition(() -> top.getNode(alice).group(GRP_NAME).lwm.equals(top.getNode(charlie).group(GRP_NAME).tmpLwm), 1000));
+
+        leaseholder.sync(GRP_NAME).join();
+
+        assertEquals(Timestamp.min(), top.getNode(charlie).group(GRP_NAME).lwm, "LWM should not be propagated");
+        assertTrue(waitForCondition(() -> top.getNode(alice).group(GRP_NAME).lwm.equals(top.getNode(charlie).group(GRP_NAME).tmpLwm), 1000));
+
+        top.getNode(charlie).group(GRP_NAME).catchup().join();
+        assertNull(top.getNode(charlie).group(GRP_NAME).tmpLwm);
+        validateLease(leader);
     }
 
     @Test
@@ -534,18 +580,25 @@ public class ReplicationGroup2NodesTest extends BasicReplicationTest {
             assertTrue(waitForCondition(() -> newMembers.equals(locGroup.getMembers()), 1000), nodeId.toString());
         }
 
-        assertNotEquals(newMembers, top.getNode(alice).group(GRP_NAME).getMembers());
+        leaseholder.replicate(GRP_NAME, new Put(1, 1)).join();
+
+        assertTrue(top.getNode(alice).group(GRP_NAME).lwm.compareTo(top.getNode(bob).group(GRP_NAME).lwm) > 0, "Out of sync expected");
+
+        leaseholder.sync(GRP_NAME).join();
+
+        assertTrue(top.getNode(alice).group(GRP_NAME).lwm.compareTo(top.getNode(bob).group(GRP_NAME).lwm) > 0, "Out of sync expected");
     }
 
     private void validate(int val) {
-        assertEquals(val, top.getNode(leader).localGet(GRP_NAME, val, top.getNode(alice).group(GRP_NAME).lwm).join());
-        assertEquals(val, top.getNode(leader).localGet(GRP_NAME, val, top.getNode(bob).group(GRP_NAME).lwm).join());
-
-        assertEquals(top.getNode(alice).group(GRP_NAME).replicators.get(alice).getLwm(), top.getNode(alice).group(GRP_NAME).lwm);
-        assertEquals(top.getNode(alice).group(GRP_NAME).replicators.get(bob).getLwm(), top.getNode(bob).group(GRP_NAME).lwm);
+        for (Node value : top.getNodeMap().values()) {
+            assertEquals(val, top.getNode(leader).localGet(GRP_NAME, val, top.getNode(value.id()).group(GRP_NAME).lwm).join());
+            assertEquals(top.getNode(leader).group(GRP_NAME).replicators.get(value.id()).getLwm(), top.getNode(value.id()).group(GRP_NAME).lwm);
+        }
     }
 
     private void validateAtTimestamp(int val, Timestamp ts) {
-        assertEquals(val, top.getNode(leader).localGet(GRP_NAME, val, ts).join());
+        for (Node value : top.getNodeMap().values()) {
+            assertEquals(val, value.localGet(GRP_NAME, val, ts).join());
+        }
     }
 }

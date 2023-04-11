@@ -110,10 +110,7 @@ public class Node {
             return;
         }
 
-        if (replicate.getLwm().compareTo(grp.lwm) > 0) {
-            // Ignore stale sync requests - this is safe, because all updates up to lwm already replicated.
-            grp.setLwm(replicate.getLwm());
-        }
+        grp.setLwm(replicate.getLwm());
 
         Object data = replicate.getData();
         if (data instanceof Put) {
@@ -132,10 +129,7 @@ public class Node {
     public void visit(Finish finish, Request request, CompletableFuture<Response> resp) {
         Group grp = groups.get(request.getGrp());
 
-        if (finish.getLwm().compareTo(grp.lwm) > 0) {
-            // Ignore stale sync requests - this is safe, because all updates up to lwm already replicated.
-            grp.setLwm(finish.getLwm());
-        }
+        grp.setLwm(finish.getLwm());
 
         if (finish.data()) {
             grp.store.finish(finish.getTs(), finish.finish());
@@ -145,7 +139,7 @@ public class Node {
     }
 
     public void visit(LeaseGranted lease, Request request, CompletableFuture<Response> resp) {
-        grant(lease.name(), lease.from(), lease.candidate(), lease.members(), resp);
+        grant(lease.name(), lease.from(), lease.candidate(), lease.members(), lease.maxLwm(), resp);
     }
 
     public void visit(LeaseProposed lease, Request request, CompletableFuture<Response> resp) {
@@ -155,9 +149,7 @@ public class Node {
     public void visit(Sync sync, Request request, CompletableFuture<Response> resp) {
         Group grp = groups.get(request.getGrp());
 
-        if (sync.getLwm().compareTo(grp.lwm) > 0) {
-            grp.setLwm(sync.getLwm()); // Ignore stale sync requests - this is safe.
-        }
+        grp.setLwm(sync.getLwm());
 
         resp.complete(new Response(clock.now()));
     }
@@ -171,7 +163,7 @@ public class Node {
     private void propose(String grp, Timestamp leaseStart, Set<NodeId> members, CompletableFuture<Response> resp) {
         LOGGER.log(Level.INFO, "[grp={0}, from={1}, nodeId={2}]", grp, leaseStart, nodeId);
 
-        NodeId leaseholder = nodeId; // Try assign myself.
+        NodeId candidate = nodeId; // Try assign myself.
         Group group = this.groups.get(grp);
         assert group != null;
 
@@ -187,7 +179,7 @@ public class Node {
         boolean leaseExtended = false;
 
         if (prev != null && leaseStart.compareTo(prev.adjust(Tracker.LEASE_DURATION)) < 0) { // Ignore stale updates, except refresh for current leaseholder. TODO test
-            if (!leaseholder.equals(group.getLeaseHolder())) {
+            if (!candidate.equals(group.getLeaseHolder())) {
                 resp.complete(new Response(now, 1, "Lease request ignored (wrong candidate)")); // TODO error code
                 return;
             }
@@ -195,17 +187,20 @@ public class Node {
             leaseExtended = true;
         }
 
+        // Skip validation if lease is extended.
         if (leaseExtended) {
-            // Asynchronously propagate the lease.
-            Request request = new Request();
-            request.setGrp(group.getName());
-            request.setTs(now);
-            request.setPayload(new LeaseGranted(group.getName(), leaseStart, group.getLeaseHolder(), members));
-
             resp.complete(new Response(now));
 
             // Asynchronously notify alive members.
             for (NodeId nodeId0 : members) {
+                Request request = new Request();
+                request.setGrp(group.getName());
+                request.setTs(now);
+
+                // Send current lwm to new nodes.
+                Timestamp tmp = (!group.getMembers().contains(nodeId0)) ? group.lwm : null;
+                request.setPayload(new LeaseGranted(group.getName(), leaseStart, group.getLeaseHolder(), members, tmp));
+
                 if (top.getNode(nodeId0) == null)
                     continue;
 
@@ -224,23 +219,23 @@ public class Node {
             request.setPayload(new Collect());
 
             if (top.getNodeMap().get(nodeId) == null) {
-                callback(now, lwms, nodeId, null, members, leaseStart, group, leaseholder, resp);
+                callback(now, lwms, nodeId, null, members, leaseStart, group, candidate, resp);
             } else {
                 client.send(nodeId, request).orTimeout(Replicator.TIMEOUT_SEC, TimeUnit.SECONDS).thenAccept(response -> {
                     clock.onResponse(response.getTs());
                     CollectResponse cr = (CollectResponse) response;
 
                     // TODO report cause.
-                    callback(now, lwms, nodeId, cr.getLwm(), members, leaseStart, group, leaseholder, resp);
+                    callback(now, lwms, nodeId, cr.getLwm(), members, leaseStart, group, candidate, resp);
                 }).exceptionally(err -> {
-                    callback(now, lwms, nodeId, null, members, leaseStart, group, leaseholder, resp);
+                    callback(now, lwms, nodeId, null, members, leaseStart, group, candidate, resp);
                     return null; // TODO report cause.
                 });
             }
         }
     }
 
-    private void grant(String grp, Timestamp from, NodeId leaseholder, Set<NodeId> members, CompletableFuture<Response> resp) {
+    private void grant(String grp, Timestamp from, NodeId leaseholder, Set<NodeId> members, @Nullable Timestamp maxLwm, CompletableFuture<Response> resp) {
         Timestamp now = clock.now();
 
         Group group = this.groups.get(grp);
@@ -266,6 +261,15 @@ public class Node {
         // Safe to commit topology on leader election.
         group.setState(members, now);
         group.commitState(now, true);
+
+        // Node is up to date - move to OPERATIONAL. Skip this step if lease is refreshed.
+        if (maxLwm != null) {
+            if (group.lwm.equals(maxLwm)) {
+                group.state = Tracker.State.OPERATIONAL;
+            } else {
+                group.state = Tracker.State.CATCHINGUP;
+            }
+        }
 
         if (id().equals(leaseholder)) {
             LOGGER.log(Level.INFO, "I am the leasholder: [interval={0}:{1}, at={2}, nodeId={3}]", from, from.adjust(Tracker.LEASE_DURATION), now, nodeId);
@@ -603,7 +607,7 @@ public class Node {
                 Request request = new Request();
                 request.setGrp(group.getName());
                 request.setTs(now);
-                request.setPayload(new LeaseGranted(group.getName(), from, candidate, members));
+                request.setPayload(new LeaseGranted(group.getName(), from, candidate, members, ts));
 
                 // Asynchronously notify alive members.
                 for (NodeId nodeId0 : members) {

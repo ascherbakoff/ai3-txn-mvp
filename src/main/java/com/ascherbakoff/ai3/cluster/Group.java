@@ -12,6 +12,7 @@ import java.util.Map.Entry;
 import java.util.NavigableMap;
 import java.util.Set;
 import java.util.TreeMap;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadFactory;
@@ -30,7 +31,7 @@ public class Group {
     // Group state.
     public @Nullable Set<NodeId> pendingMembers;
     public @Nullable Set<NodeId> members;
-    public State state;
+    public State state = State.IDLE;
 
     // Replicators for this group. Filled only on leader.
     Map<NodeId, Replicator> replicators = new HashMap<>();
@@ -44,6 +45,8 @@ public class Group {
 
     // Read requests, waiting for LWM.
     public TreeMap<Timestamp, Read> pendingReads = new TreeMap<>();
+
+    public Timestamp tmpLwm = Timestamp.min();
 
     public Group(String name) {
         this.name = name;
@@ -80,10 +83,9 @@ public class Group {
     public boolean commitState(Timestamp from, boolean finish) {
         if (finish) {
             members = pendingMembers;
-        } else {
-            pendingMembers = null;
         }
 
+        pendingMembers = null;
         // TODO process local state.
 
         return true;
@@ -146,6 +148,18 @@ public class Group {
     }
 
     public void setLwm(Timestamp lwm) {
+        if (this.state == State.CATCHINGUP) { // In CU state we are tracking temporary lwm.
+            if (lwm.compareTo(this.tmpLwm) <= 0) {
+                return; // Ignore stale LWM. this is safe, because all updates up to lwm already replicated.
+            }
+            this.tmpLwm = lwm;
+            return;
+        }
+
+        if (lwm.compareTo(this.lwm) <= 0) {
+            return; // Ignore stale LWM. this is safe, because all updates up to lwm already replicated.
+        }
+
         this.lwm = lwm;
         NavigableMap<Timestamp, Read> head = pendingReads.headMap(lwm, true);
         for (Entry<Timestamp, Read> e : head.entrySet()) {
@@ -162,5 +176,11 @@ public class Group {
 
     public int majority() {
         return size() / 2 + 1;
+    }
+
+    public CompletableFuture<Void> catchup() {
+        assert state == State.CATCHINGUP;
+
+        return CompletableFuture.completedFuture(null);
     }
 }

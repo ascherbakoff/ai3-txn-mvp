@@ -7,18 +7,21 @@ import com.ascherbakoff.ai3.cluster.Tracker.State;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
+import org.jetbrains.annotations.Nullable;
 
 public class LeaseGranted implements Command {
     private final String name;
     private final Timestamp from;
     private final NodeId candidate;
     private final Set<NodeId> members;
+    private final Timestamp maxLwm;
 
-    public LeaseGranted(String name, Timestamp from, NodeId candidate, Set<NodeId> members) {
+    public LeaseGranted(String name, Timestamp from, NodeId candidate, Set<NodeId> members, @Nullable Timestamp maxLwm) {
         this.name = name;
         this.from = from;
         this.candidate = candidate;
         this.members = members;
+        this.maxLwm = maxLwm;
     }
 
     @Override
@@ -49,5 +52,9 @@ public class LeaseGranted implements Command {
      */
     public Set<NodeId> members() {
         return members;
+    }
+
+    public @Nullable Timestamp maxLwm() {
+        return maxLwm;
     }
 }

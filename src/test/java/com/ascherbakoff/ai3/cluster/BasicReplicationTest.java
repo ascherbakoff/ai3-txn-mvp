@@ -33,10 +33,20 @@ public class BasicReplicationTest extends BasicTest {
         }
     }
 
-    protected void validateLease(@Nullable NodeId leader) {
+    protected void validateLease(@Nullable NodeId leader, NodeId... exclude) {
         Group grp = null;
 
         for (Node node : top.getNodeMap().values()) {
+            boolean skip = false;
+            for (NodeId nodeId : exclude) {
+                if (node.id().equals(nodeId)) {
+                    skip = true;
+                }
+            }
+
+            if (skip)
+                continue;
+
             Group locGroup = node.group(GRP_NAME);
 
             if (leader == null) {

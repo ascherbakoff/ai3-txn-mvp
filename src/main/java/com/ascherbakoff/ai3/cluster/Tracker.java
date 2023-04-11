@@ -103,7 +103,7 @@ public class Tracker {
         return client.send(candidate, request).orTimeout(Replicator.TIMEOUT_SEC, TimeUnit.SECONDS).handle((response, err) -> {
             // TODO handle redirect.
             if (err == null && response.getReturn() != 0) {
-                // TODO handle response code
+                // TODO handle response code. If the candidate responded with error, can immediately try another.
                 LOGGER.log(Level.INFO, "Leaseholder rejected: [group={0}, leaseholder={1}, at={2}, reason={3}]", name, candidate, from, response.getMessage());
                 throw new RuntimeException(response.getMessage());
             }
@@ -119,6 +119,8 @@ public class Tracker {
     }
 
     public enum State {
-        OPERATIONAL, OFFLINE, CATCHINGUP
+        OPERATIONAL,
+        CATCHINGUP,
+        IDLE
     }
 }
