@@ -1,15 +1,12 @@
 package com.ascherbakoff.ai3.cluster;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.junit.jupiter.api.Assertions.fail;
 
 import com.ascherbakoff.ai3.clock.Timestamp;
-import com.ascherbakoff.ai3.replication.Configure;
 import com.ascherbakoff.ai3.replication.Put;
 import com.ascherbakoff.ai3.replication.Replicate;
 import com.ascherbakoff.ai3.replication.Replicator;
@@ -284,16 +281,12 @@ public class ReplicationGroup3NodesTest extends BasicReplicationTest {
 
         Set<NodeId> newMembers = Set.of(alice);
 
-        Timestamp ts = leaseholder.replicate(GRP_NAME, new Configure(newMembers)).join();
-
-        Thread.sleep(50); // TODO get rid
+        Timestamp ts = tracker.assignLeaseholder(GRP_NAME, leader, newMembers).join();
 
         for (NodeId nodeId : newMembers) {
             Group locGroup = top.getNode(nodeId).group(GRP_NAME);
-            assertEquals(newMembers, locGroup.getMembers(), nodeId.toString());
+            assertTrue(waitForCondition(() -> newMembers.equals(locGroup.getMembers()), 1000), nodeId.toString());
         }
-
-        assertNotEquals(newMembers, top.getNode(alice).group(GRP_NAME).getMembers());
     }
 
 }

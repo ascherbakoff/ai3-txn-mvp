@@ -4,7 +4,6 @@ import com.ascherbakoff.ai3.clock.Clock;
 import com.ascherbakoff.ai3.clock.Timestamp;
 import com.ascherbakoff.ai3.replication.Collect;
 import com.ascherbakoff.ai3.replication.CollectResponse;
-import com.ascherbakoff.ai3.replication.Configure;
 import com.ascherbakoff.ai3.replication.Finish;
 import com.ascherbakoff.ai3.replication.LeaseGranted;
 import com.ascherbakoff.ai3.replication.LeaseProposed;
@@ -117,10 +116,6 @@ public class Node {
             Put put = (Put) data;
             grp.store.put(put.getKey(), put.getValue(), request.getTs());
             resp.complete(new Response(now));
-        } else if (data instanceof Configure) {
-            Configure configure = (Configure) data;
-            grp.setState(configure.getMembers(), request.getTs());
-            resp.complete(new Response(now));
         } else {
             resp.complete(new Response(now, 1, "Unsupported command"));
         }
@@ -128,14 +123,8 @@ public class Node {
 
     public void visit(Finish finish, Request request, CompletableFuture<Response> resp) {
         Group grp = groups.get(request.getGrp());
-
         grp.setLwm(finish.getLwm());
-
-        if (finish.data()) {
-            grp.store.finish(finish.getTs(), finish.finish());
-        } else {
-            grp.commitState(finish.getTs().iterator().next(), finish.finish());
-        }
+        grp.store.finish(finish.getTs(), finish.finish());
     }
 
     public void visit(LeaseGranted lease, Request request, CompletableFuture<Response> resp) {
@@ -258,9 +247,7 @@ public class Node {
 
         assert group.validLease(from, leaseholder);
 
-        // Safe to commit topology on leader election.
         group.setState(members, now);
-        group.commitState(now, true);
 
         // Node is up to date - move to OPERATIONAL. Skip this step if lease is refreshed.
         if (maxLwm != null) {
@@ -366,7 +353,7 @@ public class Node {
                 request.setGrp(grp);
                 request.setPayload(new Replicate(replicator.getLwm(), payload));
 
-                Inflight inflight = replicator.send(request, payload instanceof Put);
+                Inflight inflight = replicator.send(request);
 
                 // This future is completed from node's worker thread
                 inflight.ioFuture().whenCompleteAsync((resp, ex) -> {

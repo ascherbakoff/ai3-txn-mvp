@@ -2,7 +2,6 @@ package com.ascherbakoff.ai3.cluster;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -10,7 +9,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 
 import com.ascherbakoff.ai3.clock.Timestamp;
-import com.ascherbakoff.ai3.replication.Configure;
+import com.ascherbakoff.ai3.cluster.Tracker.State;
 import com.ascherbakoff.ai3.replication.Put;
 import com.ascherbakoff.ai3.replication.Replicate;
 import com.ascherbakoff.ai3.replication.Replicator;
@@ -544,6 +543,8 @@ public class ReplicationGroup2NodesTest extends BasicReplicationTest {
         waitLeaseholder(ts, leader, tracker, top, GRP_NAME);
         validateLease(leader, charlie);
 
+        assertEquals(State.CATCHINGUP, top.getNode(charlie).group(GRP_NAME).state);
+
         // TODO validate lease
         assertEquals(Timestamp.min(), top.getNode(charlie).group(GRP_NAME).lwm, "New node is expected to be empty");
 
@@ -572,8 +573,8 @@ public class ReplicationGroup2NodesTest extends BasicReplicationTest {
 
         Set<NodeId> newMembers = Set.of(alice);
 
-        // Replicate to majority.
-        leaseholder.replicate(GRP_NAME, new Configure(newMembers)).join();
+        // Propagate new configuration in lease refresh.
+        Timestamp ts = tracker.assignLeaseholder(GRP_NAME, leader, newMembers).join();
 
         for (NodeId nodeId : newMembers) {
             Group locGroup = top.getNode(nodeId).group(GRP_NAME);

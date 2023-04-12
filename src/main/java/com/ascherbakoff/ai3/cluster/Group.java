@@ -29,7 +29,6 @@ public class Group {
     public Timestamp lwm = Timestamp.min();
 
     // Group state.
-    public @Nullable Set<NodeId> pendingMembers;
     public @Nullable Set<NodeId> members;
     public State state = State.IDLE;
 
@@ -77,18 +76,7 @@ public class Group {
     }
 
     public void setState(Set<NodeId> members, Timestamp from) {
-        this.pendingMembers = new HashSet<>(members);
-    }
-
-    public boolean commitState(Timestamp from, boolean finish) {
-        if (finish) {
-            members = pendingMembers;
-        }
-
-        pendingMembers = null;
-        // TODO process local state.
-
-        return true;
+        this.members = new HashSet<>(members);
     }
 
     public ExecutorService executorService = Executors.newSingleThreadExecutor(new ThreadFactory() {
@@ -118,9 +106,6 @@ public class Group {
             return false;
         }
         if (lwm != null ? !lwm.equals(group.lwm) : group.lwm != null) {
-            return false;
-        }
-        if (pendingMembers != null ? !pendingMembers.equals(group.pendingMembers) : group.pendingMembers != null) {
             return false;
         }
         if (members != null ? !members.equals(group.members) : group.members != null) {

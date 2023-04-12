@@ -42,10 +42,10 @@ public class Replicator {
         this.client = new RpcClient(topology);
     }
 
-    public Inflight send(Request request, boolean data) {
+    public Inflight send(Request request) {
         CompletableFuture<Response> ioFut = client.send(nodeId, request).orTimeout(TIMEOUT_SEC, TimeUnit.SECONDS);
 
-        Inflight inflight = new Inflight(request.getTs(), ioFut, this, data);
+        Inflight inflight = new Inflight(request.getTs(), ioFut, this);
         inflights.put(inflight.ts, inflight);
 
         LOGGER.log(Level.DEBUG, "Send id={0}, ts={1}, curLwm={2}", request.getId(), request.getTs(), lwm);
@@ -90,7 +90,7 @@ public class Replicator {
             request.setGrp(grp);
             request.setSender(nodeId);
             request.setId(UUID.randomUUID());
-            request.setPayload(new Finish(Collections.singleton(inflight.ts()), inflight.state == State.COMMIT, getLwm(), inflight.data()));
+            request.setPayload(new Finish(Collections.singleton(inflight.ts()), inflight.state == State.COMMIT, getLwm()));
             client.send(nodeId, request);
         }
 
@@ -132,13 +132,11 @@ public class Replicator {
         private final CompletableFuture<Response> ioFuture;
         private final Replicator replicator;
         private State state;
-        private final boolean data;
 
-        Inflight(Timestamp now, CompletableFuture<Response> ioFut, Replicator replicator, boolean data) {
+        Inflight(Timestamp now, CompletableFuture<Response> ioFut, Replicator replicator) {
             this.ts = now;
             this.ioFuture = ioFut;
             this.replicator = replicator;
-            this.data = data;
         }
 
         public CompletableFuture<Void> future() {
@@ -173,10 +171,6 @@ public class Replicator {
 
         public State state() {
             return state;
-        }
-
-        public boolean data() {
-            return data;
         }
     }
 
