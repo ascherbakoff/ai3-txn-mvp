@@ -108,7 +108,7 @@ class VersionChain<T> {
         VersionChain<T> cur = this;
 
         do {
-            if (cur.begin != null && timestamp.compareTo(cur.begin) >= 0 && (cur.end == null || timestamp.compareTo(cur.end) < 0)) {
+            if (cur.matches(timestamp)) {
                 return filter == null ? cur.value : filter.test(cur.value) ? cur.value : null;
             }
 
@@ -116,6 +116,10 @@ class VersionChain<T> {
         } while(cur != null);
 
         return null;
+    }
+
+    private boolean matches(Timestamp timestamp) {
+        return begin != null && timestamp.compareTo(begin) >= 0 && (end == null || timestamp.compareTo(end) < 0);
     }
 
     /**
@@ -174,6 +178,22 @@ class VersionChain<T> {
         }
     }
 
+    synchronized public void printVersionChainOldToNew() {
+        System.out.println("head=" + (long)(hashCode() & (-1)));
+        VersionChain<T> cur = this.last;
+
+        if (cur == null) {
+            System.out.println("begin=" + begin + " end=" + end + ", value=" + value);
+            return;
+        }
+
+        while(cur != null) {
+            System.out.println("begin=" + cur.begin + " end=" + cur.end + ", value=" + cur.value);
+
+            cur = cur.prev;
+        }
+    }
+
     synchronized public void commitWrite(Timestamp timestamp, UUID txId) {
         assert txId != null && txId.equals(this.txId);
 
@@ -200,5 +220,52 @@ class VersionChain<T> {
         this.end = next.end;
         this.value = next.value;
         this.next = next.next;
+    }
+
+    synchronized public @Nullable VersionChain<T> clone(@Nullable Timestamp high) {
+        if (this.last == null) {
+            VersionChain<T> chain = new VersionChain<>(null, begin, end, value);
+            if (high != null && !chain.matches(high))
+                return null;
+            return chain;
+        }
+
+        VersionChain tail = new VersionChain<>(null, this.last.begin, this.last.end, this.last.value);
+        VersionChain last0 = tail;
+
+        // Iterate old list and create copies.
+        VersionChain<T> cur = this.last;
+
+        while(cur.prev != null) {
+            VersionChain<T> prev = new VersionChain<>(null, cur.prev.begin, cur.prev.end, cur.prev.value);
+
+            tail.prev = prev;
+            prev.next = tail;
+            tail = prev;
+
+            cur = cur.prev;
+        }
+
+        tail.last = last0;
+        tail.cnt = this.cnt;
+        int skipped = 0;
+
+        if (high != null) {
+            do {
+                if (tail.matches(high)) {
+                    // Unlink head part.
+                    tail.prev = null;
+                    tail.last = last0;
+                    tail.cnt = this.cnt - skipped;
+                    if (tail.cnt < 2)
+                        tail.last = null;
+                    return tail;
+                }
+                skipped++;
+                tail = tail.next;
+            } while (tail != null);
+        }
+
+        return tail;
     }
 }

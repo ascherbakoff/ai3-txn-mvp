@@ -14,7 +14,15 @@ import org.jetbrains.annotations.Nullable;
  * @param <T>
  */
 public class VersionChainRowStore<T> implements RowStore<VersionChain<T>, T> {
-    private Set<VersionChain<T>> heads = Collections.newSetFromMap(new ConcurrentHashMap<>());
+    private Set<VersionChain<T>> heads;
+
+    public VersionChainRowStore() {
+        heads = Collections.newSetFromMap(new ConcurrentHashMap<>());
+    }
+
+    public VersionChainRowStore(Set<VersionChain<T>> heads) {
+        this.heads = heads;
+    }
 
     @Override
     public T get(VersionChain<T> rowId, UUID txId, @Nullable Predicate<T> filter) {
@@ -55,6 +63,10 @@ public class VersionChainRowStore<T> implements RowStore<VersionChain<T>, T> {
         rowId.abortWrite(txId);
     }
 
+    public Set<VersionChain<T>> getHeads() {
+        return heads;
+    }
+
     @Override
     public Cursor<VersionChain<T>> scan(UUID txId) {
         Iterator<VersionChain<T>> iterator = heads.iterator();
@@ -81,16 +93,18 @@ public class VersionChainRowStore<T> implements RowStore<VersionChain<T>, T> {
             @Nullable
             @Override
             public T next() {
-                while(true) {
-                    if (!iterator.hasNext())
+                while (true) {
+                    if (!iterator.hasNext()) {
                         return null;
+                    }
 
                     VersionChain<T> next = iterator.next();
 
                     T val = next.resolve(null, timestamp, null);
 
-                    if (val != null)
+                    if (val != null) {
                         return val;
+                    }
                 }
             }
         };

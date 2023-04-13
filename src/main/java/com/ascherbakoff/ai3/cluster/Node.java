@@ -14,7 +14,10 @@ import com.ascherbakoff.ai3.replication.Replicator.Inflight;
 import com.ascherbakoff.ai3.replication.Request;
 import com.ascherbakoff.ai3.replication.Response;
 import com.ascherbakoff.ai3.replication.RpcClient;
+import com.ascherbakoff.ai3.replication.Snapshot;
+import com.ascherbakoff.ai3.replication.SnapshotResponse;
 import com.ascherbakoff.ai3.replication.Sync;
+import com.ascherbakoff.ai3.table.VersionChainRowStore;
 import java.lang.System.Logger.Level;
 import java.util.Collections;
 import java.util.HashMap;
@@ -137,7 +140,7 @@ public class Node {
 
     public void visit(Sync sync, Request request, CompletableFuture<Response> resp) {
         Group grp = groups.get(request.getGrp());
-
+        // TODO fail if grp null.
         grp.setLwm(sync.getLwm());
 
         resp.complete(new Response(clock.now()));
@@ -147,6 +150,12 @@ public class Node {
         Group grp = groups.get(request.getGrp());
 
         resp.complete(new CollectResponse(grp.lwm, clock.now()));
+    }
+
+    public void visit(Snapshot snapshot, Request request, CompletableFuture<Response> resp) {
+        Group grp = groups.get(request.getGrp());
+
+        resp.complete(new SnapshotResponse(clock.now(), grp.store.snapshot(snapshot.getLow(), snapshot.getHigh())));
     }
 
     private void propose(String grp, Timestamp leaseStart, Set<NodeId> members, CompletableFuture<Response> resp) {
@@ -180,6 +189,8 @@ public class Node {
         if (leaseExtended) {
             resp.complete(new Response(now));
 
+            Set<NodeId> prevMembers = group.getMembers();
+
             // Asynchronously notify alive members.
             for (NodeId nodeId0 : members) {
                 Request request = new Request();
@@ -187,13 +198,17 @@ public class Node {
                 request.setTs(now);
 
                 // Send current lwm to new nodes.
-                Timestamp tmp = (!group.getMembers().contains(nodeId0)) ? group.lwm : null;
+                Timestamp tmp = (!prevMembers.contains(nodeId0)) ? group.lwm : null;
                 request.setPayload(new LeaseGranted(group.getName(), leaseStart, group.getLeaseHolder(), members, tmp));
 
                 if (top.getNode(nodeId0) == null)
                     continue;
 
-                client.send(nodeId0, request);
+                if (nodeId0.equals(candidate)) {
+                    request.getPayload().accept(Node.this, request, resp); // Process in-place. All subsequent repl command will use higher timestamps.
+                } else {
+                    client.send(nodeId0, request);
+                }
             }
 
             return;
@@ -247,7 +262,8 @@ public class Node {
 
         assert group.validLease(from, leaseholder);
 
-        group.setState(members, now);
+        group.setActivationTs(now);
+        group.setState(members);
 
         // Node is up to date - move to OPERATIONAL. Skip this step if lease is refreshed.
         if (maxLwm != null) {
@@ -255,16 +271,15 @@ public class Node {
                 group.state = Tracker.State.OPERATIONAL;
             } else {
                 group.state = Tracker.State.CATCHINGUP;
+                assert !leaseholder.equals(nodeId) : "Catching up node can't be leaseholder";
             }
         }
 
         if (id().equals(leaseholder)) {
-            LOGGER.log(Level.INFO, "I am the leasholder: [interval={0}:{1}, at={2}, nodeId={3}]", from, from.adjust(Tracker.LEASE_DURATION), now, nodeId);
+            LOGGER.log(Level.INFO, "I am the leasholder: [interval={0}:{1}, activation={2}, nodeId={3}]", from, from.adjust(Tracker.LEASE_DURATION), now, nodeId);
         } else {
-            LOGGER.log(Level.INFO, "Refresh leasholder: [interval={0}:{1}, at={2}], nodeId={3}", from, from.adjust(Tracker.LEASE_DURATION), now, nodeId);
+            LOGGER.log(Level.INFO, "Set leasholder: [interval={0}:{1}, activation={2}], nodeId={3}", from, from.adjust(Tracker.LEASE_DURATION), now, nodeId);
         }
-
-        assert group.validLease(now, leaseholder);
 
         resp.complete(new Response(now));
     }
@@ -416,6 +431,32 @@ public class Node {
             replicator = new Replicator(this, id, grp, top); // TODO do we need to pass top ?
             group.replicators.put(id, replicator);
         }
+    }
+
+    public CompletableFuture<Void> catchup(String grpName) {
+        Group group = groups.get(grpName);
+        assert group != null;
+        assert group.state == Tracker.State.CATCHINGUP;
+
+        NodeId leaseHolder = getLeaseHolder(grpName);
+        if (leaseHolder == null)
+            return CompletableFuture.failedFuture(new Exception("Invalid lease"));
+
+        LOGGER.log(Level.INFO, "Catching up [grp={0}, missed={1}:{2}, leader={3}]", grpName, group.lwm, group.getActivationTs(),
+                leaseHolder);
+
+        Request request = new Request();
+        request.setId(UUID.randomUUID());
+        request.setTs(clock.now());
+        request.setGrp(grpName);
+        request.setPayload(new Snapshot(group.lwm, group.getActivationTs()));
+        return client.send(leaseHolder, request).thenApply(resp -> {
+            SnapshotResponse snapResp = (SnapshotResponse) resp;
+
+            VersionChainRowStore<Entry<Integer, Integer>> snapshot = snapResp.getSnapshot();
+
+            return null;
+        });
     }
 
     public static class Result {

@@ -542,8 +542,7 @@ public class ReplicationGroup2NodesTest extends BasicReplicationTest {
         Timestamp ts = tracker.assignLeaseholder(GRP_NAME, leader, newMembers).join();
         waitLeaseholder(ts, leader, tracker, top, GRP_NAME);
         validateLease(leader, charlie);
-
-        assertEquals(State.CATCHINGUP, top.getNode(charlie).group(GRP_NAME).state);
+        assertTrue(waitForCondition(() -> State.CATCHINGUP == top.getNode(charlie).group(GRP_NAME).state, 1000));
 
         // TODO validate lease
         assertEquals(Timestamp.min(), top.getNode(charlie).group(GRP_NAME).lwm, "New node is expected to be empty");
@@ -559,7 +558,13 @@ public class ReplicationGroup2NodesTest extends BasicReplicationTest {
         assertEquals(Timestamp.min(), top.getNode(charlie).group(GRP_NAME).lwm, "LWM should not be propagated");
         assertTrue(waitForCondition(() -> top.getNode(alice).group(GRP_NAME).lwm.equals(top.getNode(charlie).group(GRP_NAME).tmpLwm), 1000));
 
-        top.getNode(charlie).group(GRP_NAME).catchup().join();
+        val++;
+        Timestamp ts2 = leaseholder.replicate(GRP_NAME, new Put(val, val)).join();
+        LOGGER.log(Level.INFO, "Replicated with ts={0}", ts2);
+
+        assertTrue(ts2.compareTo(top.getNode(leader).group(GRP_NAME).getActivationTs()) > 0);
+
+        top.getNode(charlie).catchup(GRP_NAME).join();
         assertNull(top.getNode(charlie).group(GRP_NAME).tmpLwm);
         validateLease(leader);
     }

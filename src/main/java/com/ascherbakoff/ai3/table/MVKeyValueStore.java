@@ -1,15 +1,13 @@
 package com.ascherbakoff.ai3.table;
 
 import com.ascherbakoff.ai3.clock.Timestamp;
-import com.ascherbakoff.ai3.cluster.Node;
 import java.lang.System.Logger.Level;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Set;
-import java.util.TreeMap;
 import java.util.UUID;
-import java.util.concurrent.atomic.AtomicLong;
 import org.jetbrains.annotations.Nullable;
 
 /**
@@ -20,11 +18,20 @@ import org.jetbrains.annotations.Nullable;
 public class MVKeyValueStore<K extends Comparable<K>, V extends Comparable<V>> {
     private static System.Logger LOGGER = System.getLogger(MVKeyValueStore.class.getName());
 
+    // TODO not needed if PK is mandatory
     VersionChainRowStore<Map.Entry<K,V>> rowStore;
 
     Map<K, VersionChain<Map.Entry<K,V>>> pk;
 
     Map<Timestamp, K> pending = new HashMap<>();
+
+    public MVKeyValueStore(VersionChainRowStore<Map.Entry<K,V>> store) {
+        rowStore = store;
+        pk = new HashMap<>();
+        for (VersionChain<Entry<K, V>> head : store.getHeads()) {
+            pk.put(head.value.getKey(), head);
+        }
+    }
 
     public MVKeyValueStore() {
         rowStore = new VersionChainRowStore<>();
@@ -108,6 +115,20 @@ public class MVKeyValueStore<K extends Comparable<K>, V extends Comparable<V>> {
                 chain.abortWrite(txId);
             }
         }
+    }
+
+    public synchronized VersionChainRowStore<Entry<K, V>> snapshot(@Nullable Timestamp low, Timestamp high) {
+        Set<VersionChain<Entry<K, V>>> values = rowStore.getHeads();
+
+        VersionChainRowStore<Entry<K, V>> store = new VersionChainRowStore<>();
+
+        for (VersionChain<Entry<K, V>> value : values) {
+            VersionChain<Entry<K, V>> cloned = value.clone(high);
+            if (cloned != null)
+                store.getHeads().add(cloned);
+        }
+
+        return store;
     }
 
     private static class MyEntry<K, V> implements Map.Entry<K,V> {

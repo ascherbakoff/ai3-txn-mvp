@@ -8,7 +8,7 @@ public class Timestamp implements Comparable<Timestamp> {
 
     private final long counter;
 
-    Timestamp(long physical, long counter) {
+    public Timestamp(long physical, long counter) {
         this.physical = physical;
         this.counter = counter;
     }

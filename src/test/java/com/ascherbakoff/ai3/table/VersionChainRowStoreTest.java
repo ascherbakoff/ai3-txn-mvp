@@ -175,5 +175,36 @@ public class VersionChainRowStoreTest extends BasicTest {
         assertEquals(VersionChain.MAX_ALLOWED, cnt);
         assertNull(c);
     }
+
+    @Test
+    public void testClone() {
+        Tuple t1 = Tuple.create("name0", "id@some.org");
+        UUID txId0 = new UUID(0, 0);
+        VersionChain<Tuple> rowId = store.insert(t1, txId0);
+        store.commitWrite(rowId, new Timestamp(0, 0), txId0);
+
+        int cnt = 5;
+        for (int i = 1; i < cnt; i++) {
+            UUID txId = new UUID(0, i);
+            Tuple t = Tuple.create("name" + i, "id@some.org");
+            assertEquals(t1, store.update(rowId, t, txId));
+            store.commitWrite(rowId, new Timestamp(0, i), txId);
+            t1 = t;
+        }
+
+        //rowId.printVersionChainOldToNew();
+
+        VersionChain<Tuple> cloned = rowId.clone(null);
+
+        cloned.printVersionChain();
+        cloned.printVersionChainOldToNew();
+
+        cloned = rowId.clone(new Timestamp(0, 1));
+
+        cloned.printVersionChain();
+        cloned.printVersionChainOldToNew();
+
+        // TODO validate
+    }
 }
 

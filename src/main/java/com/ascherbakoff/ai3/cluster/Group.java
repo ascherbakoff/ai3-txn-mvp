@@ -41,6 +41,7 @@ public class Group {
     // Leaseholder state.
     private Timestamp lease;
     private @Nullable NodeId leaseHolder;
+    private Timestamp activationTs; // A timestamp at which lease was activated or refreshed. Used to determine catchup range.All repl commands happening after activation will receive higher timestamps.
 
     // Read requests, waiting for LWM.
     public TreeMap<Timestamp, Read> pendingReads = new TreeMap<>();
@@ -71,11 +72,19 @@ public class Group {
         this.leaseHolder = leaseHolder;
     }
 
+    public Timestamp getActivationTs() {
+        return activationTs;
+    }
+
+    public void setActivationTs(Timestamp activationTs) {
+        this.activationTs = activationTs;
+    }
+
     public Set<NodeId> getMembers() {
         return members == null ? Collections.emptySet() : members;
     }
 
-    public void setState(Set<NodeId> members, Timestamp from) {
+    public void setState(Set<NodeId> members) {
         this.members = new HashSet<>(members);
     }
 
@@ -161,11 +170,5 @@ public class Group {
 
     public int majority() {
         return size() / 2 + 1;
-    }
-
-    public CompletableFuture<Void> catchup() {
-        assert state == State.CATCHINGUP;
-
-        return CompletableFuture.completedFuture(null);
     }
 }
