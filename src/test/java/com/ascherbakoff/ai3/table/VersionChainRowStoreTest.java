@@ -194,6 +194,8 @@ public class VersionChainRowStoreTest extends BasicTest {
 
         //rowId.printVersionChainOldToNew();
 
+        rowId.printVersionChain();
+
         VersionChain<Tuple> cloned = rowId.clone(null);
 
         cloned.printVersionChain();
@@ -205,6 +207,58 @@ public class VersionChainRowStoreTest extends BasicTest {
         cloned.printVersionChainOldToNew();
 
         // TODO validate
+    }
+
+    @Test
+    public void testMerge() {
+        Tuple t1 = Tuple.create("name20", "id@some.org");
+        UUID txId1 = new UUID(0, 20);
+        VersionChain<Tuple> head = store.insert(t1, txId1);
+        store.commitWrite(head, new Timestamp(0, 20), txId1);
+
+        Tuple t2 = Tuple.create("name0", "id@some.org");
+        UUID txId2 = new UUID(0, 0);
+        VersionChain<Tuple> rowId = store.insert(t2, txId2);
+        store.commitWrite(rowId, new Timestamp(0, 0), txId2);
+
+        int cnt = 5;
+        for (int i = 1; i < cnt; i++) {
+            UUID txId = new UUID(0, i);
+            Tuple t = Tuple.create("name" + i, "id@some.org");
+            assertEquals(t2, store.update(rowId, t, txId));
+            store.commitWrite(rowId, new Timestamp(0, i), txId);
+            t2 = t;
+        }
+
+        rowId.end = new Timestamp(0, 20);
+
+        head.merge(rowId);
+
+        head.printVersionChain();
+        head.printVersionChainOldToNew();
+
+        assertEquals(6, head.cnt);
+    }
+
+    @Test
+    public void testMerge2() {
+        Tuple t1 = Tuple.create("name20", "id@some.org");
+        UUID txId1 = new UUID(0, 20);
+        VersionChain<Tuple> head = store.insert(t1, txId1);
+        store.commitWrite(head, new Timestamp(0, 20), txId1);
+
+        Tuple t2 = Tuple.create("name0", "id@some.org");
+        UUID txId2 = new UUID(0, 0);
+        VersionChain<Tuple> rowId = store.insert(t2, txId2);
+        store.commitWrite(rowId, new Timestamp(0, 0), txId2);
+
+        rowId.end = new Timestamp(0, 20);
+        head.merge(rowId);
+
+        head.printVersionChain();
+        head.printVersionChainOldToNew();
+
+        assertEquals(2, head.cnt);
     }
 }
 

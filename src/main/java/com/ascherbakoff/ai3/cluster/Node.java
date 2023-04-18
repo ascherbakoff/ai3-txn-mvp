@@ -433,7 +433,7 @@ public class Node {
         }
     }
 
-    public CompletableFuture<Void> catchup(String grpName) {
+    public CompletableFuture<Void> catchUp(String grpName) {
         Group group = groups.get(grpName);
         assert group != null;
         assert group.state == Tracker.State.CATCHINGUP;
@@ -454,6 +454,14 @@ public class Node {
             SnapshotResponse snapResp = (SnapshotResponse) resp;
 
             VersionChainRowStore<Entry<Integer, Integer>> snapshot = snapResp.getSnapshot();
+
+            Timestamp old = group.lwm;
+
+            // TODO make async
+            group.setSnapshot(snapshot);
+
+            LOGGER.log(Level.INFO, "Catch up finished [grp={0}, missed={1}:{2}, leader={3}]", grpName, old, group.getActivationTs(),
+                    leaseHolder);
 
             return null;
         });

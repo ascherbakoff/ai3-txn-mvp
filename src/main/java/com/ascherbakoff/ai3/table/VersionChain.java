@@ -16,7 +16,7 @@ class VersionChain<T> {
     @Nullable VersionChain<T> next;
     @Nullable VersionChain<T> prev;
     @Nullable VersionChain<T> last; // TODO makes sense only for chain head.
-    private int cnt = 1; // TODO makes sense only for chain head.
+    int cnt = 1; // TODO makes sense only for chain head.
 
     VersionChain(UUID txId, @Nullable Timestamp begin, @Nullable Timestamp end, @Nullable T value) {
         this.txId = txId;
@@ -267,5 +267,27 @@ class VersionChain<T> {
         }
 
         return tail;
+    }
+
+    /**
+     * Merges a newer chain with a given older chain.
+     *
+     * @param chain The chain.
+     */
+    public void merge(@Nullable VersionChain<T> chain) {
+        if (chain == null)
+            return;
+
+        assert begin.compareTo(chain.end) >= 0;
+
+        if (this.last == null) {
+            this.last = Objects.requireNonNullElse(chain.last, chain);
+        } else {
+            this.last = chain.last;
+        }
+
+        this.cnt += chain.cnt;
+        this.next = chain;
+        chain.prev = this;
     }
 }

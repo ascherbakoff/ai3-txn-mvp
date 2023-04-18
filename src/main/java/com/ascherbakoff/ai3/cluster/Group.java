@@ -4,6 +4,7 @@ import com.ascherbakoff.ai3.clock.Timestamp;
 import com.ascherbakoff.ai3.cluster.Tracker.State;
 import com.ascherbakoff.ai3.replication.Replicator;
 import com.ascherbakoff.ai3.table.MVKeyValueStore;
+import com.ascherbakoff.ai3.table.VersionChainRowStore;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -170,5 +171,13 @@ public class Group {
 
     public int majority() {
         return size() / 2 + 1;
+    }
+
+    // TODO async operation.
+    public void setSnapshot(VersionChainRowStore<Entry<Integer, Integer>> snapshot) {
+        store.setSnapshot(snapshot);
+        state = State.OPERATIONAL;
+        setLwm(tmpLwm);
+        tmpLwm = Timestamp.min();
     }
 }

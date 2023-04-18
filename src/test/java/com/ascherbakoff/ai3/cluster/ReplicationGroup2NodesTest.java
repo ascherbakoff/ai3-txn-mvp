@@ -564,9 +564,11 @@ public class ReplicationGroup2NodesTest extends BasicReplicationTest {
 
         assertTrue(ts2.compareTo(top.getNode(leader).group(GRP_NAME).getActivationTs()) > 0);
 
-        top.getNode(charlie).catchup(GRP_NAME).join();
-        assertNull(top.getNode(charlie).group(GRP_NAME).tmpLwm);
+        top.getNode(charlie).catchUp(GRP_NAME).join();
+        assertEquals(Timestamp.min(), top.getNode(charlie).group(GRP_NAME).tmpLwm);
         validateLease(leader);
+
+        validate(val);
     }
 
     @Test
@@ -593,6 +595,11 @@ public class ReplicationGroup2NodesTest extends BasicReplicationTest {
         leaseholder.sync(GRP_NAME).join();
 
         assertTrue(top.getNode(alice).group(GRP_NAME).lwm.compareTo(top.getNode(bob).group(GRP_NAME).lwm) > 0, "Out of sync expected");
+    }
+
+    @Test
+    public void testLeaderFailedDuringLeaseRefresh() {
+        fail();
     }
 
     private void validate(int val) {

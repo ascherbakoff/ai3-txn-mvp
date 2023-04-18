@@ -25,14 +25,6 @@ public class MVKeyValueStore<K extends Comparable<K>, V extends Comparable<V>> {
 
     Map<Timestamp, K> pending = new HashMap<>();
 
-    public MVKeyValueStore(VersionChainRowStore<Map.Entry<K,V>> store) {
-        rowStore = store;
-        pk = new HashMap<>();
-        for (VersionChain<Entry<K, V>> head : store.getHeads()) {
-            pk.put(head.value.getKey(), head);
-        }
-    }
-
     public MVKeyValueStore() {
         rowStore = new VersionChainRowStore<>();
         pk = new HashMap<>();
@@ -129,6 +121,26 @@ public class MVKeyValueStore<K extends Comparable<K>, V extends Comparable<V>> {
         }
 
         return store;
+    }
+
+    /**
+     * Merges the snapshot with the current state.
+     * TODO handle concurrent load.
+     *
+     * @param snapshot The snapshot.
+     */
+    public void setSnapshot(VersionChainRowStore<Entry<K, V>> snapshot) {
+        for (VersionChain<Entry<K, V>> chain : snapshot.getHeads()) {
+            pk.compute(chain.value.getKey(), (k, v) -> {
+                if (v == null) {
+                    rowStore.getHeads().add(chain); // TODO FIXME thread unsafe.
+                    return chain;
+                } else {
+                    v.merge(chain);
+                    return v;
+                }
+            });
+        }
     }
 
     private static class MyEntry<K, V> implements Map.Entry<K,V> {
