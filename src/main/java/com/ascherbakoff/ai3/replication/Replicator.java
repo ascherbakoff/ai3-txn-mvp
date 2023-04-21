@@ -15,6 +15,28 @@ import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 
+/**
+ * Entries are ordered on a sender.
+ * Entries can be applied on a received in any order.
+ * LWM is advanced if and only if all precefing gaps are closed and corresponding entry is replicated to majority.
+ * Entries can't be committed until they covered by LWM.
+ * Entries can be uncommitted after the covered by LWM - this defined by external commit protocol. By default, any entry below lwm can be considered committed.
+ * On a leaseholder change, new leaseholder commits uncommitted entires (below lwm).
+ * On a leasholder change, lwm is set to lease begin ts.
+ * Configuration is stored externally and applied on lease proposal.
+ * On lease proposal:
+ *  1. If a refresh, new nodes receive current lwm and perform catch up, simultaneouly applying new ops
+ *  2. On leader change, a max lwm owner node is resolved (maybe multiple), and this node becomes new leaseholder. Other alive nodes perform catch up in the supplied gap.
+ * Case: entry was replicated to majority, and failed to minority. minority is marked as error - no replication through it, requires catch up
+ * Case: entry was replicated to minority, and failed to majority. Group is marked as unavailable, recovery is required.
+ *
+ *
+ *
+ * Leasholder:
+ * goals:
+ * no two leaseholders can exists at the same time.
+ * leaseholder failover must be completed in finite time.
+ */
 public class Replicator {
     public static int TIMEOUT_SEC = 1;
 

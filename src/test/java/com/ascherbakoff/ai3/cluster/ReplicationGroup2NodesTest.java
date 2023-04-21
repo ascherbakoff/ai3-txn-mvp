@@ -10,6 +10,7 @@ import static org.junit.jupiter.api.Assertions.fail;
 
 import com.ascherbakoff.ai3.clock.Timestamp;
 import com.ascherbakoff.ai3.cluster.Tracker.State;
+import com.ascherbakoff.ai3.replication.Finish;
 import com.ascherbakoff.ai3.replication.Put;
 import com.ascherbakoff.ai3.replication.Replicate;
 import com.ascherbakoff.ai3.replication.Replicator;
@@ -598,7 +599,47 @@ public class ReplicationGroup2NodesTest extends BasicReplicationTest {
     }
 
     @Test
+    public void testLeaderChangeDuringReplication() {
+        createCluster();
+
+        Node leaseholder = top.getNode(alice);
+        int v = 0;
+        leaseholder.replicate(GRP_NAME, new Put(v, v)).join();
+
+        for (Node value : top.getNodeMap().values()) {
+            Replicator rep = top.getNode(alice).group(GRP_NAME).replicators.get(value.id());
+            rep.client().block(r -> r.getPayload() instanceof Finish);
+        }
+
+        v++;
+        leaseholder.replicate(GRP_NAME, new Put(v, v));
+
+        for (Node value : top.getNodeMap().values()) {
+            Replicator rep = top.getNode(alice).group(GRP_NAME).replicators.get(value.id());
+            assertTrue(waitForCondition(() -> rep.client().blocked().size() == 1, 1_000));
+        }
+
+        for (Node value : top.getNodeMap().values()) {
+            Replicator rep = top.getNode(alice).group(GRP_NAME).replicators.get(value.id());
+            rep.client().clearBlock();
+        }
+
+        v++;
+        leaseholder.replicate(GRP_NAME, new Put(v, v)).join();
+
+        System.out.println();
+    }
+
+    @Test
     public void testLeaderFailedDuringLeaseRefresh() {
+        fail();
+    }
+
+    /**
+     * Tests if uncommitted entries are skipped on snapshot.
+     */
+    @Test
+    public void testCatchupWithUncommitted() {
         fail();
     }
 
