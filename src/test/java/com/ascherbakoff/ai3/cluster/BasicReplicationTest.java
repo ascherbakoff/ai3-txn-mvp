@@ -15,25 +15,30 @@ public class BasicReplicationTest extends BasicTest {
 
     Topology top;
     Tracker tracker;
+
     final NodeId alice = new NodeId("alice");
     NodeId bob = new NodeId("bob");
+
     NodeId charlie = new NodeId("charlie");
-    NodeId leader;
+
+    NodeId dave = new NodeId("dave");
+    NodeId eve = new NodeId("eve");
+
     Set<NodeId> nodeIds;
 
-    protected void waitLeaseholder(Timestamp ts, NodeId nodeId, Tracker tracker, Topology top, String grp) {
+    protected void waitLeader(Timestamp ts, NodeId nodeId, Tracker tracker, Topology top, String grp) {
         for (Node node : top.getNodeMap().values()) {
             assertTrue(waitForCondition(() -> {
-                NodeId leaseHolder = node.getLeaseHolder(grp);
+                NodeId leader = node.getLeader(grp);
                 Timestamp lease = node.getLease(grp);
-                if (leaseHolder == null || lease == null)
+                if (leader == null || lease == null)
                     return false;
-                return nodeId.equals(leaseHolder) && ts.equals(lease);
-            }, 1_000), "Failed to wait for leaseholder: nodeId=" + node.id());
+                return nodeId.equals(leader) && ts.equals(lease);
+            }, 1_000), "Failed to wait for leader: nodeId=" + node.id());
         }
     }
 
-    protected void validateLease(@Nullable NodeId leader, NodeId... exclude) {
+    protected void validate(@Nullable NodeId leader, NodeId... exclude) {
         Group grp = null;
 
         for (Node node : top.getNodeMap().values()) {
@@ -50,9 +55,9 @@ public class BasicReplicationTest extends BasicTest {
             Group locGroup = node.group(GRP_NAME);
 
             if (leader == null) {
-                assertNull(node.getLeaseHolder(GRP_NAME));
+                assertNull(node.getLeader(GRP_NAME));
             } else {
-                assertEquals(leader, node.getLeaseHolder(GRP_NAME));
+                assertEquals(leader, node.getLeader(GRP_NAME));
             }
 
             if (grp == null) {
@@ -69,23 +74,29 @@ public class BasicReplicationTest extends BasicTest {
 
     protected void createCluster(int nodes) {
         top = new Topology();
-        top.regiser(new Node(alice, top, clock));
-        top.regiser(new Node(bob, top, clock));
+        top.regiser(new Node(alice, top, clock, GRP_NAME));
+        top.regiser(new Node(bob, top, clock, GRP_NAME));
 
         nodeIds = new HashSet<>();
         nodeIds.add(alice);
         nodeIds.add(bob);
 
-        if (nodes == 3) {
+        if (nodes >= 3) {
             top.regiser(new Node(charlie, top, clock));
             nodeIds.add(charlie);
         }
 
-        leader = alice;
+        if (nodes >= 5) {
+            top.regiser(new Node(dave, top, clock));
+            nodeIds.add(dave);
+
+            top.regiser(new Node(eve, top, clock));
+            nodeIds.add(eve);
+        }
 
         tracker = new Tracker(top, clock);
-        Timestamp ts = tracker.assignLeaseholder(GRP_NAME, leader, nodeIds).join();
+        Timestamp ts = tracker.assignLeader(GRP_NAME, alice, nodeIds).join();
 
-        waitLeaseholder(ts, leader, tracker, top, GRP_NAME);
+        waitLeader(ts, alice, tracker, top, GRP_NAME);
     }
 }

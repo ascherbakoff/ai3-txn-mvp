@@ -12,7 +12,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 
 /**
- * Tracker is stateless.
+ * TODO Tracker must have durable state.
  */
 public class Tracker {
     public static final int LEASE_DURATION = 100;
@@ -32,67 +32,18 @@ public class Tracker {
 
     private RpcClient client;
 
-    public void assignLeaseHolders() {
-        // TODO
-    }
-
     public Clock clock() {
         return clock;
     }
 
-//    public boolean refreshLeaseholder(String name) {
-//        Group group = groups.get(name);
-//
-//        if (group == null)
-//            throw new IllegalArgumentException("Group not found " + name);
-//
-//        NodeId cur = group.getLeaseHolder();
-//
-//        NodeId candidate = getLeaseHolder(name);
-//
-//        if (candidate == null) { // Holder not elected or expired.
-//            List<NodeId> nodeIds = new ArrayList<>(group.getNodeState().keySet());
-//
-//            while (!nodeIds.isEmpty()) {
-//                int idx = ThreadLocalRandom.current().nextInt(nodeIds.size());
-//
-//                NodeId nodeId = nodeIds.get(idx);
-//
-//                Node node = topology.getNode(nodeId);
-//
-//                if (node == null) {
-//                    nodeIds.remove(idx);
-//                    group.setState(nodeId, State.OFFLINE);
-//                    continue;
-//                } else if (group.getNodeState().get(nodeId) == State.OFFLINE) {
-//                    group.setState(nodeId, State.CATCHINGUP); // Node is back again.
-//                }
-//
-//                candidate = nodeId; // Found operational node.
-//                break;
-//            }
-//        } else {
-//            candidate = cur; // Try to re-elect previous holder.
-//        }
-//
-//        if (candidate == null) {
-//            LOGGER.log(Level.INFO, "Failed to choose a leaseholder for group, will try again later {0}", name);
-//            return false;
-//        }
-//
-//        assert candidate != null;
-//
-//        return assignLeaseholder(name, candidate);
-//    }
-
     /**
-     * Assigns (or refreshes) the proposed node to be a leaseholder for the next (or current) lease range.
+     * Assigns (or refreshes) the proposed node to be a leader for the next (or current) lease range.
      *
      * @param name The group name.
      * @param candidate The candidate.
      * @return Assignment future, containing lease begin on completion.
      */
-    public CompletableFuture<Timestamp> assignLeaseholder(String name, NodeId candidate, Set<NodeId> members) {
+    public CompletableFuture<Timestamp> assignLeader(String name, NodeId candidate, Set<NodeId> members) {
         Timestamp from = clock.now();
 
         Request request = new Request();
@@ -109,18 +60,12 @@ public class Tracker {
             }
 
             if (err != null) {
-                LOGGER.log(Level.INFO, "Leaseholder assigned with error: [group={0}, leaseholder={1}, at={2}, err={3}]", name, candidate, from, err.getMessage());
+                LOGGER.log(Level.INFO, "Leader assigned with error: [group={0}, leader={1}, at={2}, err={3}]", name, candidate, from, err.getMessage());
             } else {
-                LOGGER.log(Level.INFO, "Leaseholder assigned: [group={0}, leaseholder={1}, at={2}]", name, candidate, from);
+                LOGGER.log(Level.INFO, "Leader assigned: [group={0}, leader={1}, at={2}]", name, candidate, from);
             }
 
             return from;
         });
-    }
-
-    public enum State {
-        OPERATIONAL,
-        CATCHINGUP,
-        IDLE
     }
 }

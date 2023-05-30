@@ -1,20 +1,23 @@
 package com.ascherbakoff.ai3.replication;
 
-import com.ascherbakoff.ai3.clock.Timestamp;
 import com.ascherbakoff.ai3.cluster.Node;
 import java.util.concurrent.CompletableFuture;
 
 public class Replicate implements Command {
-    private Timestamp lwm;
+    private long cntr;
     private Object data;
 
-    public Replicate(Timestamp lwm, Object data) {
-        this.lwm = lwm;
+    public Replicate(long cntr, Object data) {
+        this.cntr = cntr;
         this.data = data;
     }
 
-    public Timestamp getLwm() {
-        return lwm;
+    public long getCntr() {
+        return cntr;
+    }
+
+    public void setCntr(long cntr) {
+        this.cntr = cntr;
     }
 
     public Object getData() {

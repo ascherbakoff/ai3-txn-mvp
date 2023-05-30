@@ -3,20 +3,19 @@ package com.ascherbakoff.ai3.cluster;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import com.ascherbakoff.ai3.clock.Timestamp;
-import com.ascherbakoff.ai3.replication.Put;
 import java.util.concurrent.CompletionException;
 import org.junit.jupiter.api.Test;
 
-public class LeaseholderAssignTest extends BasicReplicationTest {
-    private static System.Logger LOGGER = System.getLogger(LeaseholderAssignTest.class.getName());
+public class LeaderAssignTest extends BasicReplicationTest {
+    private static System.Logger LOGGER = System.getLogger(LeaderAssignTest.class.getName());
 
     @Test
     public void testInitialAssign() {
         createCluster();
 
-        assertThrows(CompletionException.class, () -> tracker.assignLeaseholder(GRP_NAME, bob, nodeIds).join());
+        assertThrows(CompletionException.class, () -> tracker.assignLeader(GRP_NAME, bob, nodeIds).join());
 
-        validateLease(leader);
+        validate(alice);
     }
 
     @Test
@@ -25,7 +24,7 @@ public class LeaseholderAssignTest extends BasicReplicationTest {
 
         adjustClocks(Tracker.LEASE_DURATION);
 
-        validateLease(null);
+        validate(null);
     }
 
     @Test
@@ -35,13 +34,13 @@ public class LeaseholderAssignTest extends BasicReplicationTest {
         adjustClocks(Tracker.LEASE_DURATION / 2);
 
         // Refresh.
-        Timestamp ts = tracker.assignLeaseholder(GRP_NAME, alice, nodeIds).join();
-        waitLeaseholder(ts, alice, tracker, top, GRP_NAME);
+        Timestamp ts = tracker.assignLeader(GRP_NAME, alice, nodeIds).join();
+        waitLeader(ts, alice, tracker, top, GRP_NAME);
 
         adjustClocks(Tracker.LEASE_DURATION / 2);
 
         // Lease still active after lease duration
-        waitLeaseholder(ts, alice, tracker, top, GRP_NAME);
+        waitLeader(ts, alice, tracker, top, GRP_NAME);
     }
 
     @Test
@@ -50,10 +49,10 @@ public class LeaseholderAssignTest extends BasicReplicationTest {
 
         adjustClocks(Tracker.LEASE_DURATION + Tracker.MAX_CLOCK_SKEW);
 
-        Timestamp ts = tracker.assignLeaseholder(GRP_NAME, bob, nodeIds).join();
-        waitLeaseholder(ts, bob, tracker, top, GRP_NAME);
+        Timestamp ts = tracker.assignLeader(GRP_NAME, bob, nodeIds).join();
+        waitLeader(ts, bob, tracker, top, GRP_NAME);
 
-        validateLease(bob);
+        validate(bob);
     }
 
     /**
@@ -110,18 +109,5 @@ public class LeaseholderAssignTest extends BasicReplicationTest {
     @Test
     public void testScenario4() {
 
-    }
-
-    /**
-     * Tests if a non leader is attempting to replicate.
-     */
-    @Test
-    public void testNonLeaderReplication() {
-        createCluster();
-
-        Node leaseholder = top.getNode(alice);
-        leaseholder.replicate(GRP_NAME, new Put(0, 0)).join();
-
-        assertThrows(CompletionException.class, () -> top.getNode(bob).replicate(GRP_NAME, new Put(0, 0)).join());
     }
 }

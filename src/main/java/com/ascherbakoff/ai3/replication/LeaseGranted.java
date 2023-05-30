@@ -3,7 +3,7 @@ package com.ascherbakoff.ai3.replication;
 import com.ascherbakoff.ai3.clock.Timestamp;
 import com.ascherbakoff.ai3.cluster.Node;
 import com.ascherbakoff.ai3.cluster.NodeId;
-import com.ascherbakoff.ai3.cluster.Tracker.State;
+//import com.ascherbakoff.ai3.cluster.Tracker.State;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
@@ -14,14 +14,14 @@ public class LeaseGranted implements Command {
     private final Timestamp from;
     private final NodeId candidate;
     private final Set<NodeId> members;
-    private final Timestamp maxLwm;
+    private final long repCntr;
 
-    public LeaseGranted(String name, Timestamp from, NodeId candidate, Set<NodeId> members, @Nullable Timestamp maxLwm) {
+    public LeaseGranted(String name, Timestamp from, NodeId candidate, Set<NodeId> members, long repCntr) {
         this.name = name;
         this.from = from;
         this.candidate = candidate;
         this.members = members;
-        this.maxLwm = maxLwm;
+        this.repCntr = repCntr;
     }
 
     @Override
@@ -54,7 +54,7 @@ public class LeaseGranted implements Command {
         return members;
     }
 
-    public @Nullable Timestamp maxLwm() {
-        return maxLwm;
+    public long getRepCntr() {
+        return repCntr;
     }
 }

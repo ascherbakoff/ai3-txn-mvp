@@ -1,17 +1,16 @@
 package com.ascherbakoff.ai3.replication;
 
 import com.ascherbakoff.ai3.clock.Timestamp;
-import org.jetbrains.annotations.Nullable;
 
 public class CollectResponse extends Response {
-    private final Timestamp lwm;
+    private final long repCntr;
 
-    public CollectResponse(Timestamp lwm, Timestamp ts) {
+    public CollectResponse(long repCntr, Timestamp ts) {
         super(ts);
-        this.lwm = lwm;
+        this.repCntr = repCntr;
     }
 
-    public @Nullable Timestamp getLwm() {
-        return lwm; // null on error.
+    public long getRepCntr() {
+        return repCntr;
     }
 }
