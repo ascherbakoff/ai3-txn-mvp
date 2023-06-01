@@ -418,6 +418,12 @@ public class Node {
         return replicator;
     }
 
+    public Replicator getReplicator(String grp, NodeId id) {
+        Group group = groups.get(grp);
+
+        return group.replicators.get(id);
+    }
+
     public CompletableFuture<Void> catchUp(String grpName) {
         Group group = groups.get(grpName);
         assert group != null;

@@ -43,6 +43,7 @@ public class Group {
     // Snap index.
     TreeMap<Timestamp, Replicate> snapIdx = new TreeMap<Timestamp, Replicate>();
 
+    // Maintained on a leader.
     // TODO rename safe <-> rep
     private long safeCntr;
     private Timestamp safeTs;

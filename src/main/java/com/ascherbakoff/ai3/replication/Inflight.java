@@ -5,7 +5,6 @@ import java.util.concurrent.CompletableFuture;
 
 public class Inflight {
     private final Timestamp ts;
-    private final CompletableFuture<Void> fut = new CompletableFuture<>();
     private final Replicate replicate;
     private final CompletableFuture<Response> ioFut;
 

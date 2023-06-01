@@ -116,4 +116,11 @@ public class Replicator {
     public Timestamp getRepTs() {
         return repTs;
     }
+
+    public Inflight inflight(Request request) {
+        assert request.getPayload() instanceof Replicate;
+        Replicate r = (Replicate) request.getPayload();
+
+        return inflights.get(r.getCntr());
+    }
 }

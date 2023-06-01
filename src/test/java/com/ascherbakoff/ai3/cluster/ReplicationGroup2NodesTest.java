@@ -2,6 +2,7 @@ package com.ascherbakoff.ai3.cluster;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -75,6 +76,77 @@ public class ReplicationGroup2NodesTest extends BasicReplicationTest {
 
         assertEquals(1, grp0.getRepCntr());
         assertEquals(1, grp1.getRepCntr());
+    }
+
+    @Test
+    public void testReorder() throws InterruptedException {
+        createCluster();
+
+        Node leaseholder = top.getNode(alice);
+        int val = 0;
+        leaseholder.replicate(GRP_NAME, new Put(val, val)).join();
+        waitReplication();
+
+        Group grp0 = top.getNode(alice).group(GRP_NAME);
+        Group grp1 = top.getNode(bob).group(GRP_NAME);
+
+        Timestamp ts0_0 = grp0.getRepTs();
+
+        Timestamp ts1_0 = grp1.getRepTs();
+        long cntr1_0 = grp1.getRepCntr();
+
+        top.getNode(alice).getReplicator(GRP_NAME, bob);
+        Replicator toBob = top.getNode(alice).group(GRP_NAME).replicators.get(bob);
+        toBob.client().block(r -> true);
+
+        //Timestamp t0 = top.getNode(alice).group(GRP_NAME).replicators.get(bob).getSafeCntr();
+
+        val++;
+        CompletableFuture<Timestamp> res0 = top.getNode(alice).replicate(GRP_NAME, new Put(val, val));
+        val++;
+        CompletableFuture<Timestamp> res1 = top.getNode(alice).replicate(GRP_NAME, new Put(val, val));
+
+        assertTrue(waitForCondition(() -> toBob.client().blocked().size() == 2, 1000));
+        ArrayList<Request> blocked = toBob.client().blocked();
+
+        toBob.client().unblock(r -> r.getTs().equals(blocked.get(1).getTs()));
+        assertTrue(waitForCondition(() -> toBob.inflight(blocked.get(1)).ioFuture().isDone(), 1000));
+
+        Timestamp repTs = grp0.getRepTs();
+        assertNotEquals(ts0_0, repTs);
+
+        // Rep cntr should not change.
+        assertEquals(ts1_0, grp1.getRepTs());
+        assertEquals(cntr1_0, grp1.getRepCntr());
+
+        System.out.println();
+
+        //assertEquals(t0, top.getNode(bob).group(GRP_NAME).repTs);
+//
+//        toBob.client().unblock(r -> r.getTs().equals(blocked.get(1).getTs()));
+//        assertTrue(waitForCondition(() -> toBob.inflight(blocked.get(1).getTs()).future().isDone(), 1000));
+//        assertEquals(t0, top.getNode(bob).group(GRP_NAME).repTs);
+//
+//        Inflight inf = toBob.inflight(blocked.get(0).getTs());
+//        toBob.client().unblock(r -> r.getTs().equals(blocked.get(0).getTs()));
+//        assertTrue(waitForCondition(() -> inf.future().isDone(), 1000));
+//        assertEquals(t0, top.getNode(bob).group(GRP_NAME).repTs);
+//
+//        res0.join();
+//        res1.join();
+//        res2.join();
+//
+//        assertEquals(0, toBob.inflights());
+//
+//        Timestamp t = top.getNode(alice).group(GRP_NAME).replicators.get(bob).getSafeCntr();
+//        Timestamp t2 = top.getNode(bob).group(GRP_NAME).repTs;
+//        assertTrue(t.compareTo(t2) > 0);
+//
+//        toBob.client().clearBlock();
+//        top.getNode(alice).sync(GRP_NAME).join();
+//
+//        assertEquals(top.getNode(alice).group(GRP_NAME).replicators.get(bob).getSafeCntr(), top.getNode(bob).group(GRP_NAME).repTs);
+//        assertEquals(top.getNode(alice).group(GRP_NAME).replicators.get(alice).getSafeCntr(), top.getNode(alice).group(GRP_NAME).repTs);
     }
 
 //    @Test
