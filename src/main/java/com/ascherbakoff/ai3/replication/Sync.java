@@ -5,14 +5,14 @@ import com.ascherbakoff.ai3.cluster.Node;
 import java.util.concurrent.CompletableFuture;
 
 public class Sync implements Command {
-    private Timestamp lwm;
+    private Timestamp timestamp;
 
-    public Sync(Timestamp lwm) {
-        this.lwm = lwm;
+    public Sync(Timestamp timestamp) {
+        this.timestamp = timestamp;
     }
 
-    public Timestamp getLwm() {
-        return lwm;
+    public Timestamp getTimestamp() {
+        return timestamp;
     }
 
     @Override

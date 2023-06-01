@@ -19,6 +19,7 @@ import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -36,29 +37,46 @@ public class ReplicationGroup2NodesTest extends BasicReplicationTest {
 
         Node leaseholder = top.getNode(alice);
         leaseholder.replicate(GRP_NAME, new Put(0, 0)).join();
+        waitReplication();
 
         Group grp0 = top.getNode(alice).group(GRP_NAME);
         Group grp1 = top.getNode(bob).group(GRP_NAME);
 
         assertEquals(grp0, grp1);
 
-        System.out.println();
+        leaseholder.replicate(GRP_NAME, new Put(1, 1)).join();
+        waitReplication();
+
+        grp0 = top.getNode(alice).group(GRP_NAME);
+        grp1 = top.getNode(bob).group(GRP_NAME);
+
+        assertEquals(grp0, grp1);
     }
 
-//    @Test
-//    public void testIdlePropagation() throws InterruptedException {
-//        createCluster();
-//
-//        Node leaseholder = top.getNode(alice);
-//        int val = 0;
-//        leaseholder.replicate(GRP_NAME, new Put(val, val)).join();
-//        adjustClocks(20);
-//
-//        Timestamp ts = leaseholder.sync(GRP_NAME).join();
-//
-//        validateAtTimestamp(val, ts);
-//    }
-//
+
+    @Test
+    public void testIdlePropagation() throws InterruptedException, ExecutionException {
+        createCluster();
+
+        Node leaseholder = top.getNode(alice);
+        int val = 0;
+        leaseholder.replicate(GRP_NAME, new Put(val, val)).join();
+        waitReplication();
+        adjustClocks(20);
+
+        Timestamp ts = leaseholder.sync(GRP_NAME).get();
+        waitReplication();
+
+        Group grp0 = top.getNode(alice).group(GRP_NAME);
+        Group grp1 = top.getNode(bob).group(GRP_NAME);
+
+        assertEquals(ts, grp0.getRepTs());
+        assertEquals(ts, grp1.getRepTs());
+
+        assertEquals(1, grp0.getRepCntr());
+        assertEquals(1, grp1.getRepCntr());
+    }
+
 //    @Test
 //    public void testLwmPropagation() {
 //        createCluster();
@@ -660,8 +678,8 @@ public class ReplicationGroup2NodesTest extends BasicReplicationTest {
 
 //    private void validate(int val) {
 //        for (Node value : top.getNodeMap().values()) {
-//            assertEquals(val, top.getNode(leader).localGet(GRP_NAME, val, top.getNode(value.id()).group(GRP_NAME).repTs).join());
-//            assertEquals(top.getNode(leader).group(GRP_NAME).replicators.get(value.id()).getSafeCntr(), top.getNode(value.id()).group(GRP_NAME).repTs);
+//            assertEquals(val, top.getNode(alice).localGet(GRP_NAME, val, top.getNode(value.id()).group(GRP_NAME).repTs).join());
+//            assertEquals(top.getNode(alice).group(GRP_NAME).replicators.get(value.id()).getSafeCntr(), top.getNode(value.id()).group(GRP_NAME).repTs);
 //        }
 //    }
 //

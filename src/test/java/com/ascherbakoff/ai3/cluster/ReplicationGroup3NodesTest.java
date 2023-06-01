@@ -17,6 +17,7 @@ import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -31,6 +32,59 @@ public class ReplicationGroup3NodesTest extends BasicReplicationTest {
     @Override
     protected void createCluster() {
         createCluster(3);
+    }
+
+
+    @Test
+    public void testBasicReplication() throws InterruptedException {
+        createCluster();
+
+        Node leaseholder = top.getNode(alice);
+        leaseholder.replicate(GRP_NAME, new Put(0, 0)).join();
+        waitReplication();
+
+        Group grp0 = top.getNode(alice).group(GRP_NAME);
+        Group grp1 = top.getNode(bob).group(GRP_NAME);
+        Group grp2 = top.getNode(charlie).group(GRP_NAME);
+
+        assertEquals(grp0, grp1);
+        assertEquals(grp1, grp2);
+
+        leaseholder.replicate(GRP_NAME, new Put(1, 1)).join();
+        waitReplication();
+
+        grp0 = top.getNode(alice).group(GRP_NAME);
+        grp1 = top.getNode(bob).group(GRP_NAME);
+        grp2 = top.getNode(charlie).group(GRP_NAME);
+
+        assertEquals(grp0, grp1);
+        assertEquals(grp1, grp2);
+    }
+
+    @Test
+    public void testIdlePropagation() throws InterruptedException, ExecutionException {
+        createCluster();
+
+        Node leaseholder = top.getNode(alice);
+        int val = 0;
+        leaseholder.replicate(GRP_NAME, new Put(val, val)).join();
+        waitReplication();
+        adjustClocks(20);
+
+        Timestamp ts = leaseholder.sync(GRP_NAME).get();
+        waitReplication();
+
+        Group grp0 = top.getNode(alice).group(GRP_NAME);
+        Group grp1 = top.getNode(bob).group(GRP_NAME);
+        Group grp2 = top.getNode(bob).group(GRP_NAME);
+
+        assertEquals(ts, grp0.getRepTs());
+        assertEquals(ts, grp1.getRepTs());
+        assertEquals(ts, grp2.getRepTs());
+
+        assertEquals(1, grp0.getRepCntr());
+        assertEquals(1, grp1.getRepCntr());
+        assertEquals(1, grp2.getRepCntr());
     }
 
 //    @Test

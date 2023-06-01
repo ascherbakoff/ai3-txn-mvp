@@ -38,6 +38,17 @@ public class BasicReplicationTest extends BasicTest {
         }
     }
 
+
+    protected void waitReplication() {
+        Timestamp repTs = top.getNode(alice).group(GRP_NAME).getRepTs();
+
+        for (Node node : top.getNodeMap().values()) {
+            assertTrue(waitForCondition(() -> {
+                return top.getNode(node.id()).group(GRP_NAME).getRepTs().equals(repTs);
+            }, 1_000), "Failed to wait for repTs: nodeId=" + node.id() + ", ts=" + repTs + ", real=" + top.getNode(node.id()).group(GRP_NAME).getRepTs());
+        }
+    }
+
     protected void validate(@Nullable NodeId leader, NodeId... exclude) {
         Group grp = null;
 
@@ -82,15 +93,15 @@ public class BasicReplicationTest extends BasicTest {
         nodeIds.add(bob);
 
         if (nodes >= 3) {
-            top.regiser(new Node(charlie, top, clock));
+            top.regiser(new Node(charlie, top, clock, GRP_NAME));
             nodeIds.add(charlie);
         }
 
         if (nodes >= 5) {
-            top.regiser(new Node(dave, top, clock));
+            top.regiser(new Node(dave, top, clock, GRP_NAME));
             nodeIds.add(dave);
 
-            top.regiser(new Node(eve, top, clock));
+            top.regiser(new Node(eve, top, clock, GRP_NAME));
             nodeIds.add(eve);
         }
 

@@ -12,6 +12,7 @@ import java.util.HashSet;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.Map.Entry;
+import java.util.NavigableMap;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.concurrent.ExecutorService;
@@ -113,6 +114,9 @@ public class Group {
         if (!name.equals(group.name)) {
             return false;
         }
+        if (Long.compare(repCntr, group.repCntr) != 0) {
+            return false;
+        }
         if (repTs != null ? !repTs.equals(group.repTs) : group.repTs != null) {
             return false;
         }
@@ -159,7 +163,7 @@ public class Group {
         snapIdx.put(repTs, replicate);
 
         if (local) {
-            this.repTs = repTs;
+            setRepTs(repTs);
             return;
         }
 
@@ -174,7 +178,7 @@ public class Group {
             Entry<Long, Inflight> entry = iter.next();
 
             if (repCntr + 1 == entry.getKey()) {
-                this.repTs = entry.getValue().ts();
+                setRepTs(entry.getValue().ts());
                 iter.remove();
                 repCntr++;
             }
@@ -207,5 +211,9 @@ public class Group {
         // Ignore first element.
         safeCntr = arr[maj - 2].getRepCntr();
         safeTs = arr[maj - 2].getRepTs();
+    }
+
+    public void setRepTs(Timestamp now) {
+        this.repTs = now;
     }
 }

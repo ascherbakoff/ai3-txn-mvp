@@ -16,14 +16,16 @@ import com.ascherbakoff.ai3.replication.RpcClient;
 import com.ascherbakoff.ai3.replication.Snapshot;
 import com.ascherbakoff.ai3.replication.Sync;
 import java.lang.System.Logger.Level;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Set;
+import java.util.concurrent.Callable;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -131,7 +133,7 @@ public class Node {
     public void visit(Sync sync, Request request, CompletableFuture<Response> resp) {
         Group grp = groups.get(request.getGrp());
         // TODO fail if grp null.
-        grp.setIdle(request.getTs());
+        grp.setIdle(sync.getTimestamp());
 
         resp.complete(new Response(clock.now()));
     }
@@ -203,7 +205,7 @@ public class Node {
             return;
         }
 
-        Map<NodeId, Long> cntrs = Collections.synchronizedMap(new HashMap<>());
+        Map<NodeId, Long> cntrs = new ConcurrentHashMap<>();
 
         for (NodeId nodeId : members) {
             Request request = new Request();
@@ -212,7 +214,7 @@ public class Node {
             request.setPayload(new Collect());
 
             if (top.getNodeMap().get(nodeId) == null) {
-                callback(now, cntrs, nodeId, null, members, leaseStart, group, candidate, resp);
+                callback(now, cntrs, nodeId, -1L, members, leaseStart, group, candidate, resp);
             } else {
                 client.send(nodeId, request).orTimeout(Replicator.TIMEOUT_SEC, TimeUnit.SECONDS).thenAccept(response -> {
                     clock.onResponse(response.getTs());
@@ -221,7 +223,7 @@ public class Node {
                     // TODO report cause.
                     callback(now, cntrs, nodeId, cr.getRepCntr(), members, leaseStart, group, candidate, resp);
                 }).exceptionally(err -> {
-                    callback(now, cntrs, nodeId, null, members, leaseStart, group, candidate, resp);
+                    callback(now, cntrs, nodeId, -1L, members, leaseStart, group, candidate, resp);
                     return null; // TODO report cause.
                 });
             }
@@ -263,11 +265,11 @@ public class Node {
 //        }
 
         if (id().equals(leaseholder)) {
-            LOGGER.log(Level.INFO, "I am the leasholder: [interval={0}:{1}, activation={2}, nodeId={3}]", from,
-                    from.adjust(Tracker.LEASE_DURATION), now, nodeId);
+            LOGGER.log(Level.INFO, "I am the leader: [interval={0}:{1}, at={2}, nodeId={3}, loc={4}, grp={5}]", from,
+                    from.adjust(Tracker.LEASE_DURATION), now, nodeId, group.getRepCntr(), maxCntr);
         } else {
-            LOGGER.log(Level.INFO, "Set leasholder: [interval={0}:{1}, activation={2}], nodeId={3}", from,
-                    from.adjust(Tracker.LEASE_DURATION), now, nodeId);
+            LOGGER.log(Level.INFO, "Set leader: [interval={0}:{1}, at={2}], nodeId={3}, loc={4}, grp={5}", from,
+                    from.adjust(Tracker.LEASE_DURATION), now, nodeId, group.getRepCntr(), maxCntr);
         }
 
         resp.complete(new Response(now));
@@ -323,7 +325,7 @@ public class Node {
      *
      * @param grp The group.
      * @param put The command.
-     * @return The result.
+     * @return The future which is completed successfully when a majority of nodes has finished the replication.
      */
     public CompletableFuture<Timestamp> replicate(String grp, Object payload) {
         Group group = groups.get(grp);
@@ -352,8 +354,8 @@ public class Node {
             group.accept(now, replicate, true);
             succ.incrementAndGet(); // TODO async local processing. Step down if a leader fails to apply update.
             localDone.set(true);
-            LOGGER.log(Level.INFO, "Local ack cntr={0} ts={1} node={2} sucs={3} errs={4} maj={5}",
-                    cntr, now, nodeId, succ.get(), errs.get(), maj);
+            LOGGER.log(Level.INFO, "Local ack cntr={0} ts={1} node={2} sucs={3} errs={4} maj={5} done={6} err={7}",
+                    cntr, now, nodeId, succ.get(), errs.get(), maj, resFut.isDone(), resFut.isCompletedExceptionally());
 
             for (NodeId id : nodeIds) {
                 if (nodeId.equals(id)) {
@@ -394,8 +396,9 @@ public class Node {
                         }
                     }
 
-                    LOGGER.log(Level.INFO, "Received ack cntr={0} ts={1} node={2} sucs={3} errs={4} maj={5}",
-                            inflight.getReplicate().getCntr(), inflight.ts(), id, succ.get(), errs.get(), maj);
+                    LOGGER.log(Level.INFO, "Received ack cntr={0} ts={1} node={2} sucs={3} errs={4} maj={5} done={6} err={7}",
+                            inflight.getReplicate().getCntr(), inflight.ts(), id, succ.get(), errs.get(), maj, resFut.isDone(),
+                            resFut.isCompletedExceptionally());
                 }, group.executorService);
             }
         });
@@ -494,56 +497,45 @@ public class Node {
         return fut;
     }
 
-    public CompletableFuture<Timestamp> sync(String grp) {
+    public Future<Timestamp> sync(String grp) {
         Group group = groups.get(grp);
 
-        CompletableFuture<Timestamp> res = new CompletableFuture<>();
-
-        group.executorService.submit(() -> {
-            Timestamp now = clock.now();
-            if (!group.validLease(now, nodeId)) {
-                res.completeExceptionally(new IllegalStateException("Illegal lease"));
-                return;
-            }
-
-            Set<NodeId> nodeIds = new HashSet<>(group.getMembers());
-
-            AtomicInteger acks = new AtomicInteger(0);
-
-            for (NodeId id : nodeIds) {
-                Replicator replicator = createReplicator(grp, id, group.getRepCntr());
-
-                // Handle idle propagation.
-                if (replicator.inflights() == 0) {
-                    group.setIdle(now);
+        return group.executorService.submit(new Callable<Timestamp>() {
+            @Override
+            public Timestamp call() throws Exception {
+                Timestamp now = clock.now();
+                if (!group.validLease(now, nodeId)) {
+                    throw new IllegalStateException("Illegal lease");
                 }
 
-                // Handle local node.
-                if (id.equals(nodeId)) {
-                    int val = acks.incrementAndGet();
-                    if (val == nodeIds.size()) {
-                        res.complete(now);
+                Set<NodeId> nodeIds = new HashSet<>(group.getMembers());
+
+                for (NodeId id : nodeIds) {
+                    // Handle local node.
+                    if (id.equals(nodeId)) {
+                        group.setRepTs(now); // TODO leader can use current ts as repTs.
+                        continue;
                     }
-                    continue;
+
+                    Replicator replicator = createReplicator(grp, id, group.getRepCntr());
+
+                    if (replicator.inflights() != 0) {
+                        continue;
+                    }
+
+                    Request r = new Request();
+                    r.setSender(nodeId);
+                    r.setGrp(grp);
+                    r.setTs(now); // Propagate ts in idle sync.
+                    r.setPayload(new Sync(now)); // TODO remove
+
+                    // TODO needs timeout - not all nodes can respond.
+                    replicator.idleSync(r);
                 }
 
-                Request r = new Request();
-                r.setSender(nodeId);
-                r.setGrp(grp);
-                r.setTs(now); // Propagate ts in idle sync.
-                r.setPayload(new Sync(Timestamp.min())); // TODO remove
-
-                // TODO needs timeout - not all nodes can respond.
-                replicator.idleSync(r).thenAccept(resp -> {
-                    int val = acks.incrementAndGet();
-                    if (val == nodeIds.size()) {
-                        res.complete(now);
-                    }
-                });
+                return now;
             }
         });
-
-        return res;
     }
 
     enum State {
@@ -564,8 +556,10 @@ public class Node {
 //        }
 //    }
 
-    private void callback(Timestamp now, Map<NodeId, Long> cntrs, NodeId nodeId, @Nullable Long cntr, Set<NodeId> members, Timestamp from,
+    private void callback(Timestamp now, Map<NodeId, Long> cntrs, NodeId nodeId, Long cntr, Set<NodeId> members, Timestamp from,
             Group group, NodeId candidate, CompletableFuture<Response> resp) {
+        LOGGER.log(Level.INFO, "[group={0}, leaseholder={1}, cntr={2}, node={3}]", group.getName(), candidate, cntr, nodeId);
+
         if (resp.isDone()) {
             return;
         }
@@ -576,8 +570,9 @@ public class Node {
         int majority = members.size() / 2 + 1;
         int tolerable = members.size() - majority;
 
-        if (majority
-                == members.size()) { // Handle special case for two-nodes groups. They operate in full sync and can tolerate the loss of one node to remain available.
+        // Handle special case for two-nodes groups. They operate in full sync and can tolerate the loss of one node to remain available.
+        if (majority == members.size()) {
+            assert majority == 2;
             majority = 1;
             tolerable = 1;
         }
@@ -589,7 +584,7 @@ public class Node {
             int err = 0;
 
             for (Long value : cntrs.values()) {
-                if (value != null) {
+                if (value != -1) {
                     succ++;
                 } else {
                     err++;
@@ -603,15 +598,13 @@ public class Node {
             }
 
             // Fail attempt if can't collect enough lwms.
-            if (succ == majority) {
+            if (succ >= majority) {
                 long maxCntr = 0;
 
                 // Find max.
                 for (Long value : cntrs.values()) {
-                    if (value != null) {
-                        if (value > maxCntr) {
-                            maxCntr = value;
-                        }
+                    if (value > maxCntr) {
+                        maxCntr = value;
                     }
                 }
 
@@ -623,23 +616,22 @@ public class Node {
                     }
                 }
 
-                LOGGER.log(Level.INFO, "Collected lwms: [group={0}, leaseholder={1}, max={2}]", group.getName(), candidate, maxCntr);
+                if (resp.complete(new Response(now))) {
+                    LOGGER.log(Level.INFO, "Collected majority of counters: [group={0}, leaseholder={1}, max={2}]", group.getName(), candidate, maxCntr);
+                    // Asynchronously propagate the lease.
+                    Request request = new Request();
+                    request.setGrp(group.getName());
+                    request.setTs(now);
+                    request.setPayload(new LeaseGranted(group.getName(), from, candidate, members, maxCntr));
 
-                resp.complete(new Response(now));
+                    // Asynchronously notify alive members.
+                    for (NodeId nodeId0 : members) {
+                        if (top.getNode(nodeId0) == null) {
+                            continue;
+                        }
 
-                // Asynchronously propagate the lease.
-                Request request = new Request();
-                request.setGrp(group.getName());
-                request.setTs(now);
-                request.setPayload(new LeaseGranted(group.getName(), from, candidate, members, maxCntr));
-
-                // Asynchronously notify alive members.
-                for (NodeId nodeId0 : members) {
-                    if (top.getNode(nodeId0) == null) {
-                        continue;
+                        client.send(nodeId0, request);
                     }
-
-                    client.send(nodeId0, request);
                 }
             }
         }

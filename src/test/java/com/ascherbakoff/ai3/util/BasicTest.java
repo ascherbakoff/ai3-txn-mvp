@@ -22,7 +22,7 @@ public class BasicTest {
                 if (cond.getAsBoolean())
                     return true;
 
-                Thread.sleep(50);
+                Thread.sleep(10);
             } catch (InterruptedException e) {
                 fail("Failed to wait for condition");
             }

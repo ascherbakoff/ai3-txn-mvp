@@ -16,7 +16,7 @@ import java.util.concurrent.TimeUnit;
  *
  */
 public class Replicator {
-    public static int TIMEOUT_SEC = 1;
+    public static int TIMEOUT_SEC = 10;
 
     private static System.Logger LOGGER = System.getLogger(Replicator.class.getName());
 

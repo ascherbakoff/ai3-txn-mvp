@@ -10,7 +10,12 @@ public class LeaderAssignTest extends BasicReplicationTest {
     private static System.Logger LOGGER = System.getLogger(LeaderAssignTest.class.getName());
 
     @Test
-    public void testInitialAssign() {
+    public void testAssign() {
+        createCluster();
+    }
+
+    @Test
+    public void testBadAssign() {
         createCluster();
 
         assertThrows(CompletionException.class, () -> tracker.assignLeader(GRP_NAME, bob, nodeIds).join());
