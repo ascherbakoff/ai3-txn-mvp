@@ -352,6 +352,13 @@ public class Node {
             AtomicBoolean localDone = new AtomicBoolean();
             Replicate replicate = new Replicate(cntr, payload);
             group.accept(now, replicate, true);
+
+            if (maj == 1) {
+                group.updateSafe();
+                resFut.complete(now);
+                return;
+            }
+
             succ.incrementAndGet(); // TODO async local processing. Step down if a leader fails to apply update.
             localDone.set(true);
             LOGGER.log(Level.INFO, "Local ack cntr={0} ts={1} node={2} sucs={3} errs={4} maj={5} done={6} err={7}",
@@ -564,7 +571,7 @@ public class Node {
 
     private void callback(Timestamp now, Map<NodeId, Long> cntrs, NodeId nodeId, Long cntr, Set<NodeId> members, Timestamp from,
             Group group, NodeId candidate, CompletableFuture<Response> resp) {
-        LOGGER.log(Level.INFO, "[group={0}, leaseholder={1}, cntr={2}, node={3}]", group.getName(), candidate, cntr, nodeId);
+        LOGGER.log(Level.INFO, "Received response [group={0}, leaseholder={1}, cntr={2}, node={3}]", group.getName(), candidate, cntr, nodeId);
 
         if (resp.isDone()) {
             return;

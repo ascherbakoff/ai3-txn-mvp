@@ -16,7 +16,7 @@ import java.util.concurrent.TimeUnit;
  *
  */
 public class Replicator {
-    public static int TIMEOUT_SEC = 10;
+    public static int TIMEOUT_SEC = 1;
 
     private static System.Logger LOGGER = System.getLogger(Replicator.class.getName());
 
@@ -122,5 +122,9 @@ public class Replicator {
         Replicate r = (Replicate) request.getPayload();
 
         return inflights.get(r.getCntr());
+    }
+
+    public boolean broken() {
+        return broken;
     }
 }

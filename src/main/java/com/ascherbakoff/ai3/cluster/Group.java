@@ -200,6 +200,12 @@ public class Group {
     public void updateSafe() {
         int maj = majority();
 
+        if (maj == 1) {
+            this.safeCntr = repCntr;
+            this.safeTs = repTs;
+            return;
+        }
+
         Replicator[] arr = replicators.values().toArray(Replicator[]::new);
 
         Arrays.sort(arr, new Comparator<Replicator>() {
@@ -216,5 +222,13 @@ public class Group {
 
     public void setRepTs(Timestamp now) {
         this.repTs = now;
+    }
+
+    public Timestamp getSafeTs() {
+        return this.safeTs;
+    }
+
+    public long getSafeCntr() {
+        return this.safeCntr;
     }
 }

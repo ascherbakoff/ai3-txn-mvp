@@ -16,7 +16,9 @@ import com.ascherbakoff.ai3.replication.Inflight;
 import com.ascherbakoff.ai3.replication.Request;
 import java.lang.System.Logger.Level;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.CountDownLatch;
@@ -30,6 +32,8 @@ import org.junit.jupiter.api.Test;
  * The leasholder is a standalone node.
  */
 public class ReplicationGroup2NodesTest extends BasicReplicationTest {
+    int val = 0;
+
     private static System.Logger LOGGER = System.getLogger(ReplicationGroup2NodesTest.class.getName());
 
     @Test
@@ -99,8 +103,6 @@ public class ReplicationGroup2NodesTest extends BasicReplicationTest {
         Replicator toBob = top.getNode(alice).group(GRP_NAME).replicators.get(bob);
         toBob.client().block(r -> true);
 
-        //Timestamp t0 = top.getNode(alice).group(GRP_NAME).replicators.get(bob).getSafeCntr();
-
         val++;
         CompletableFuture<Timestamp> res0 = top.getNode(alice).replicate(GRP_NAME, new Put(val, val));
         val++;
@@ -113,320 +115,200 @@ public class ReplicationGroup2NodesTest extends BasicReplicationTest {
         assertTrue(waitForCondition(() -> toBob.inflight(blocked.get(1)).ioFuture().isDone(), 1000));
 
         Timestamp repTs = grp0.getRepTs();
+        long cntr0 = grp0.getRepCntr();
         assertNotEquals(ts0_0, repTs);
 
         // Rep cntr should not change.
         assertEquals(ts1_0, grp1.getRepTs());
         assertEquals(cntr1_0, grp1.getRepCntr());
 
-        System.out.println();
+        assertEquals(ts1_0, grp0.getSafeTs());
+        assertEquals(cntr1_0, grp0.getSafeCntr());
 
-        //assertEquals(t0, top.getNode(bob).group(GRP_NAME).repTs);
-//
-//        toBob.client().unblock(r -> r.getTs().equals(blocked.get(1).getTs()));
-//        assertTrue(waitForCondition(() -> toBob.inflight(blocked.get(1).getTs()).future().isDone(), 1000));
-//        assertEquals(t0, top.getNode(bob).group(GRP_NAME).repTs);
-//
-//        Inflight inf = toBob.inflight(blocked.get(0).getTs());
-//        toBob.client().unblock(r -> r.getTs().equals(blocked.get(0).getTs()));
-//        assertTrue(waitForCondition(() -> inf.future().isDone(), 1000));
-//        assertEquals(t0, top.getNode(bob).group(GRP_NAME).repTs);
-//
-//        res0.join();
-//        res1.join();
-//        res2.join();
-//
-//        assertEquals(0, toBob.inflights());
-//
-//        Timestamp t = top.getNode(alice).group(GRP_NAME).replicators.get(bob).getSafeCntr();
-//        Timestamp t2 = top.getNode(bob).group(GRP_NAME).repTs;
-//        assertTrue(t.compareTo(t2) > 0);
-//
-//        toBob.client().clearBlock();
-//        top.getNode(alice).sync(GRP_NAME).join();
-//
-//        assertEquals(top.getNode(alice).group(GRP_NAME).replicators.get(bob).getSafeCntr(), top.getNode(bob).group(GRP_NAME).repTs);
-//        assertEquals(top.getNode(alice).group(GRP_NAME).replicators.get(alice).getSafeCntr(), top.getNode(alice).group(GRP_NAME).repTs);
+        Inflight inflight = toBob.inflight(blocked.get(0));
+        toBob.client().unblock(r -> r.getTs().equals(blocked.get(0).getTs()));
+        assertTrue(waitForCondition(() -> {
+            return inflight.ioFuture().isDone();
+        }, 1000));
+
+        assertEquals(repTs, grp1.getRepTs());
+        assertEquals(cntr0, grp1.getRepCntr());
+
+        assertEquals(grp0, grp1);
+
+        res0.join();
+        res1.join();
     }
 
-//    @Test
-//    public void testLwmPropagation() {
-//        createCluster();
-//
-//        Node leaseholder = top.getNode(leader);
-//        leaseholder.replicate(GRP_NAME, new Put(0, 0)).join();
-//
-//        Timestamp t2 = leaseholder.group(GRP_NAME).replicators.get(leader).getSafeCntr();
-//        Timestamp t3 = leaseholder.group(GRP_NAME).replicators.get(leader == alice ? bob : alice).getSafeCntr();
-//        Timestamp t4 = top.getNode(alice).group(GRP_NAME).repTs;
-//        Timestamp t5 = top.getNode(bob).group(GRP_NAME).repTs;
-//
-//        assertTrue(t2.compareTo(t4) == 0);
-//        assertTrue(t3.compareTo(t5) > 0);
-//
-//        leaseholder.sync(GRP_NAME).join();
-//
-//        assertEquals(leaseholder.group(GRP_NAME).replicators.get(alice).getSafeCntr(), top.getNode(alice).group(GRP_NAME).repTs);
-//        assertEquals(leaseholder.group(GRP_NAME).replicators.get(bob).getSafeCntr(), top.getNode(bob).group(GRP_NAME).repTs);
-//    }
-//
-//    @Test
-//    public void testLwmPropagationOutOfOrder() throws InterruptedException {
-//        createCluster();
-//
-//        top.getNode(alice).createReplicator(GRP_NAME, bob);
-//        Replicator toBob = top.getNode(alice).group(GRP_NAME).replicators.get(bob);
-//        toBob.client().block(r -> true);
-//
-//        Timestamp t0 = top.getNode(alice).group(GRP_NAME).replicators.get(bob).getSafeCntr();
-//
-//        CompletableFuture<Timestamp> res0 = top.getNode(alice).replicate(GRP_NAME, new Put(0, 0));
-//        CompletableFuture<Timestamp> res1 = top.getNode(alice).replicate(GRP_NAME, new Put(1, 1));
-//        CompletableFuture<Timestamp> res2 = top.getNode(alice).replicate(GRP_NAME, new Put(2, 2));
-//
-//        assertTrue(waitForCondition(() -> toBob.client().blocked().size() == 3, 1000));
-//        ArrayList<Request> blocked = toBob.client().blocked();
-//
-//        toBob.client().unblock(r -> r.getTs().equals(blocked.get(2).getTs()));
-//        assertTrue(waitForCondition(() -> toBob.inflight(blocked.get(2).getTs()).future().isDone(), 1000));
-//        assertEquals(t0, top.getNode(bob).group(GRP_NAME).repTs);
-//
-//        toBob.client().unblock(r -> r.getTs().equals(blocked.get(1).getTs()));
-//        assertTrue(waitForCondition(() -> toBob.inflight(blocked.get(1).getTs()).future().isDone(), 1000));
-//        assertEquals(t0, top.getNode(bob).group(GRP_NAME).repTs);
-//
-//        Inflight inf = toBob.inflight(blocked.get(0).getTs());
-//        toBob.client().unblock(r -> r.getTs().equals(blocked.get(0).getTs()));
-//        assertTrue(waitForCondition(() -> inf.future().isDone(), 1000));
-//        assertEquals(t0, top.getNode(bob).group(GRP_NAME).repTs);
-//
-//        res0.join();
-//        res1.join();
-//        res2.join();
-//
-//        assertEquals(0, toBob.inflights());
-//
-//        Timestamp t = top.getNode(alice).group(GRP_NAME).replicators.get(bob).getSafeCntr();
-//        Timestamp t2 = top.getNode(bob).group(GRP_NAME).repTs;
-//        assertTrue(t.compareTo(t2) > 0);
-//
-//        toBob.client().clearBlock();
-//        top.getNode(alice).sync(GRP_NAME).join();
-//
-//        assertEquals(top.getNode(alice).group(GRP_NAME).replicators.get(bob).getSafeCntr(), top.getNode(bob).group(GRP_NAME).repTs);
-//        assertEquals(top.getNode(alice).group(GRP_NAME).replicators.get(alice).getSafeCntr(), top.getNode(alice).group(GRP_NAME).repTs);
-//    }
-//
-//    @Test
-//    public void testLwmPropagationOutOfOrder2() throws InterruptedException {
-//        createCluster();
-//
-//        top.getNode(alice).createReplicator(GRP_NAME, bob);
-//        Replicator toBob = top.getNode(alice).group(GRP_NAME).replicators.get(bob);
-//        toBob.client().block(r -> true);
-//
-//        Timestamp t0 = top.getNode(alice).group(GRP_NAME).replicators.get(bob).getSafeCntr();
-//
-//        CompletableFuture<Timestamp> res0 = top.getNode(alice).replicate(GRP_NAME, new Put(0, 0));
-//        CompletableFuture<Timestamp> res1 = top.getNode(alice).replicate(GRP_NAME, new Put(1, 1));
-//
-//        assertTrue(waitForCondition(() -> toBob.client().blocked().size() == 2, 1000));
-//        ArrayList<Request> blocked = toBob.client().blocked();
-//
-//        assertEquals(t0, top.getNode(bob).group(GRP_NAME).repTs);
-//
-//        toBob.client().unblock(r -> r.getTs().equals(blocked.get(0).getTs()));
-//        toBob.inflight(blocked.get(0).getTs()).future().join();
-//        assertEquals(t0, top.getNode(bob).group(GRP_NAME).repTs); // LWM was not propagated by subsequent message.
-//
-//        CompletableFuture<Timestamp> res2 = top.getNode(alice).replicate(GRP_NAME, new Put(2, 2));
-//
-//        assertTrue(waitForCondition(() -> toBob.client().blocked().size() == 2, 1000));
-//        ArrayList<Request> blocked2 = toBob.client().blocked();
-//
-//        Inflight i2 = toBob.inflight(blocked2.get(1).getTs());
-//        toBob.client().unblock(r -> r.getTs().equals(i2.ts()));
-//        assertTrue(waitForCondition(() -> i2.future().isDone(), 1000));
-//        assertEquals(blocked.get(0).getTs(), top.getNode(bob).group(GRP_NAME).repTs);
-//
-//        Inflight i1 = toBob.inflight(blocked2.get(0).getTs());
-//        toBob.client().unblock(r -> r.getTs().equals(blocked2.get(0).getTs()));
-//        assertTrue(waitForCondition(() -> i1.future().isDone(), 1000));
-//        assertEquals(blocked.get(0).getTs(), top.getNode(bob).group(GRP_NAME).repTs);
-//
-//        res0.join();
-//        res1.join();
-//        res2.join();
-//
-//        Timestamp t = top.getNode(alice).group(GRP_NAME).replicators.get(bob).getSafeCntr();
-//        Timestamp t2 = top.getNode(bob).group(GRP_NAME).repTs;
-//        assertTrue(t.compareTo(t2) > 0);
-//
-//        assertEquals(0, toBob.inflights());
-//
-//        toBob.client().clearBlock();
-//        top.getNode(alice).sync(GRP_NAME).join();
-//
-//        assertEquals(top.getNode(alice).group(GRP_NAME).replicators.get(bob).getSafeCntr(), top.getNode(bob).group(GRP_NAME).repTs);
-//        assertEquals(top.getNode(alice).group(GRP_NAME).replicators.get(alice).getSafeCntr(), top.getNode(alice).group(GRP_NAME).repTs);
-//    }
-//
-//    @Test
-//    public void testSendConcurrent() throws InterruptedException {
-//        createCluster();
-//
-//        Executor senderPool = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors() * 2);
-//
-//        int msgCnt = 1000;
-//
-//        AtomicInteger gen = new AtomicInteger();
-//        AtomicInteger errCnt = new AtomicInteger();
-//        CountDownLatch l = new CountDownLatch(msgCnt);
-//
-//        long ts = System.nanoTime();
-//
-//        while(msgCnt-- > 0) {
-//            senderPool.execute(() -> {
-//                int val = gen.incrementAndGet();
-//                top.getNode(alice).replicate(GRP_NAME, new Put(val, val)).exceptionally(err -> {
-//                    errCnt.incrementAndGet();
-//                    LOGGER.log(Level.ERROR, "Failed to replicate", err);
-//                    return null;
-//                }).thenAccept(r -> l.countDown());
-//            });
-//        }
-//
-//        l.await();
-//
-//        assertEquals(0, l.getCount());
-//        assertEquals(0, errCnt.get());
-//
-//        LOGGER.log(Level.INFO, "Finished sending messages, duration {0}ms", (System.nanoTime() - ts) / 1000 / 1000.);
-//
-//        Timestamp lwm0 = top.getNode(leader).group(GRP_NAME).repTs;
-//
-//        for (int i = 0; i < msgCnt; i++) {
-//            for (Node node : top.getNodeMap().values()) {
-//                assertEquals(i, node.localGet(GRP_NAME, i, lwm0).join());
-//            }
-//        }
-//    }
+
+    @Test
+    public void testSendConcurrent() throws InterruptedException {
+        createCluster();
+
+        Executor senderPool = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors() * 2);
+
+        int msgCntr = 1000;
+        int cntr = msgCntr;
+
+        AtomicInteger gen = new AtomicInteger();
+        AtomicInteger errCnt = new AtomicInteger();
+        CountDownLatch l = new CountDownLatch(msgCntr);
+
+        long ts = System.nanoTime();
+
+        Node leader = top.getNode(alice);
+
+        while(cntr-- > 0) {
+            senderPool.execute(() -> {
+                int val = gen.incrementAndGet();
+                leader.replicate(GRP_NAME, new Put(val, val)).exceptionally(err -> {
+                    errCnt.incrementAndGet();
+                    LOGGER.log(Level.ERROR, "Failed to replicate", err);
+                    return null;
+                }).thenAccept(r -> l.countDown());
+            });
+        }
+
+        l.await();
+
+        assertEquals(0, l.getCount());
+        assertEquals(0, errCnt.get());
+
+        LOGGER.log(Level.INFO, "Finished sending messages, duration {0}ms", (System.nanoTime() - ts) / 1000 / 1000.);
+
+        waitReplication();
+
+        TreeMap<Timestamp, Replicate> snapIdx = leader.group(GRP_NAME).snapIdx;
+        TreeMap<Timestamp, Replicate> snapIdx2 = top.getNode(bob).group(GRP_NAME).snapIdx;
+
+        assertEquals(msgCntr, snapIdx.size());
+        assertEquals(snapIdx, snapIdx2);;
+    }
 //
 //    @Test
 //    public void testLeaseholderFailure() {
 //        createCluster();
 //    }
 //
-//    /**
-//     * Tests if messages from invalid leaseholder are ignored.
-//     */
-//    @Test
-//    public void testOutdatedReplication() {
-//        createCluster();
-//
-//        Node leaseholder = top.getNode(leader);
-//        int val = 0;
-//        leaseholder.replicate(GRP_NAME, new Put(val, val)).join();
-//        validate(val);
-//
-//        adjustClocks(Tracker.LEASE_DURATION / 2);
-//
-//        val++;
-//        leaseholder.replicate(GRP_NAME, new Put(val, val)).join();
-//        validate(val);
-//
-//        val++;
-//        Replicator toBob = leaseholder.group(GRP_NAME).replicators.get(bob);
-//        toBob.client().block(r -> true);
-//
-//        CompletableFuture<Timestamp> fut = leaseholder.replicate(GRP_NAME, new Put(val, val));
-//        assertFalse(fut.isDone());
-//
-//        assertTrue(waitForCondition(() -> toBob.client().blocked().size() == 1, 1_000));
-//
-//        adjustClocks(Tracker.LEASE_DURATION / 2);
-//
-//        toBob.client().unblock(r -> true);
-//
-//        assertThrows(CompletionException.class, () -> fut.join());
-//
-//
-//    }
-//
-//    @Test
-//    public void testOutdatedReplication2() throws InterruptedException {
-//        createCluster();
-//
-//        Node leaseholder = top.getNode(leader);
-//        int val = 0;
-//        leaseholder.replicate(GRP_NAME, new Put(val, val)).join();
-//        validate(val);
-//
-//        adjustClocks(Tracker.LEASE_DURATION / 2);
-//
-//        val++;
-//        leaseholder.replicate(GRP_NAME, new Put(val, val)).join();
-//        validate(val);
-//
-//        val++;
-//        Replicator toBob = leaseholder.group(GRP_NAME).replicators.get(bob);
-//        toBob.client().block(r -> true);
-//
-//        CompletableFuture<Timestamp> fut = leaseholder.replicate(GRP_NAME, new Put(val, val));
-//        assertFalse(fut.isDone());
-//
-//        assertTrue(waitForCondition(() -> toBob.client().blocked().size() == 1, 1_000));
-//
-//        adjustClocks(Tracker.LEASE_DURATION / 2 + Tracker.MAX_CLOCK_SKEW);
-//
-//        // Re-elect.
-//        Timestamp ts = tracker.assignLeader(GRP_NAME, bob, nodeIds).join();
-//        waitLeader(ts, bob, tracker, top, GRP_NAME);
-//
-//        toBob.client().unblock(r -> true);
-//
-//        assertThrows(CompletionException.class, () -> fut.join());
-//    }
-//
-//    /**
-//     * 1. One of replication messages is delayed until it's epoch is expired (the epoch corresponds to a lease duration of the initiating node).
-//     * <p>2. After expiration message is delivered.
-//     * <p>Expected result: operation is failed.
-//     * Note: this outcome seems ok, because the lease is refreshed each LEASE_DURATION / 2 and the message RTT should typically be much less.
-//     */
-//    @Test
-//    public void testOutdatedReplication3() {
-//        createCluster();
-//
-//        Node leaseholder = top.getNode(leader);
-//        int val = 0;
-//        leaseholder.replicate(GRP_NAME, new Put(val, val)).join(); // Init replicators.
-//
-//        Replicator toBob = leaseholder.group(GRP_NAME).replicators.get(bob);
-//        toBob.client().block(request -> request.getTs().physical() < Tracker.LEASE_DURATION / 2);
-//
-//        val++;
-//        CompletableFuture<Timestamp> fut = leaseholder.replicate(GRP_NAME, new Put(val, val));
-//        assertTrue(waitForCondition(() -> toBob.client().blocked().size() == 1, 1_000));
-//        assertFalse(fut.isDone());
-//
-//        adjustClocks(Tracker.LEASE_DURATION / 2);
-//
-//        Timestamp ts = tracker.assignLeader(GRP_NAME, leader, nodeIds).join();
-//        waitLeader(ts, leader, tracker, top, GRP_NAME);
-//
-//        adjustClocks(Tracker.LEASE_DURATION / 2 + Tracker.MAX_CLOCK_SKEW);
-//
-//        toBob.client().unblock(r -> true);
-//
-//        assertThrows(CompletionException.class, () -> fut.join());
-//    }
-//
-//    /**
-//     * 1. One of replication messages is delayed infinitely.
-//     * <p>Expected result: operation is failed after some timeout, closing the gap on affected replicator.
-//     * Note: not closing gaps leads to prevention of safeTime propagation.
-//     */
+
+    /**
+     * Tests if messages from invalid leaseholder are ignored.
+     */
+    @Test
+    public void testOutdatedReplication() {
+        createCluster();
+
+        Node leader = top.getNode(alice);
+        int val = 0;
+        leader.replicate(GRP_NAME, new Put(val, val)).join();
+        waitReplication();
+
+        adjustClocks(Tracker.LEASE_DURATION / 2);
+
+        val++;
+        leader.replicate(GRP_NAME, new Put(val, val)).join();
+        waitReplication();
+
+        val++;
+        Replicator toBob = leader.group(GRP_NAME).replicators.get(bob);
+        toBob.client().block(r -> true);
+
+        CompletableFuture<Timestamp> fut = leader.replicate(GRP_NAME, new Put(val, val));
+        assertFalse(fut.isDone());
+
+        assertTrue(waitForCondition(() -> toBob.client().blocked().size() == 1, 1_000));
+
+        adjustClocks(Tracker.LEASE_DURATION / 2);
+
+        toBob.client().unblock(r -> true);
+
+        assertThrows(CompletionException.class, () -> fut.join());
+    }
+
+    @Test
+    public void testOutdatedReplication2() throws InterruptedException {
+        createCluster();
+
+        Node leader = top.getNode(alice);
+        int val = 0;
+        leader.replicate(GRP_NAME, new Put(val, val)).join();
+        waitReplication();
+
+        adjustClocks(Tracker.LEASE_DURATION / 2);
+
+        val++;
+        leader.replicate(GRP_NAME, new Put(val, val)).join();
+        waitReplication();
+
+        val++;
+        Replicator toBob = leader.group(GRP_NAME).replicators.get(bob);
+        toBob.client().block(r -> true);
+
+        CompletableFuture<Timestamp> fut = leader.replicate(GRP_NAME, new Put(val, val));
+        assertFalse(fut.isDone());
+
+        assertTrue(waitForCondition(() -> toBob.client().blocked().size() == 1, 1_000));
+
+        adjustClocks(Tracker.LEASE_DURATION / 2 + Tracker.MAX_CLOCK_SKEW);
+
+        // Re-elect.
+        Timestamp ts = tracker.assignLeader(GRP_NAME, bob, nodeIds).join();
+        waitLeader(ts, bob, tracker, top, GRP_NAME);
+
+        toBob.client().unblock(r -> true);
+
+        assertThrows(CompletionException.class, () -> fut.join());
+    }
+
+    /**
+     * 1. One of replication messages is delayed until it's epoch is expired (the epoch corresponds to a lease duration of the initiating node).
+     * <p>2. After expiration message is delivered.
+     * <p>Expected result: operation is failed.
+     * Note: this outcome seems ok, because the lease is refreshed each LEASE_DURATION / 2 and the message RTT should typically be much less.
+     */
+    @Test
+    public void testOutdatedReplication3() {
+        createCluster();
+
+        Node leader = top.getNode(alice);
+        int val = 0;
+        leader.replicate(GRP_NAME, new Put(val, val)).join(); // Init replicators.
+
+        Replicator toBob = leader.group(GRP_NAME).replicators.get(bob);
+        toBob.client().block(request -> request.getTs().physical() < Tracker.LEASE_DURATION / 2);
+
+        val++;
+        CompletableFuture<Timestamp> fut = leader.replicate(GRP_NAME, new Put(val, val));
+        assertTrue(waitForCondition(() -> toBob.client().blocked().size() == 1, 1_000));
+        assertFalse(fut.isDone());
+
+        adjustClocks(Tracker.LEASE_DURATION / 2);
+
+        Timestamp ts = tracker.assignLeader(GRP_NAME, alice, nodeIds).join();
+        waitLeader(ts, alice, tracker, top, GRP_NAME);
+
+        adjustClocks(Tracker.LEASE_DURATION / 2 + Tracker.MAX_CLOCK_SKEW);
+
+        toBob.client().unblock(r -> true);
+
+        assertThrows(CompletionException.class, () -> fut.join());
+    }
+
+    /**
+     * 1. One of replication messages is delayed infinitely.
+     * <p>Expected result: operation is failed after some timeout, closing the gap on affected replicator.
+     * Note: not closing gaps leads to prevention of safeTime propagation.
+     */
+    @Test
+    public void testClosedGaps() throws Exception {
+
+    }
+
+    /**
+     * 1. One of replication messages is delayed infinitely.
+     * <p>Expected result: operation is failed after some timeout, closing the gap on affected replicator.
+     * Note: not closing gaps leads to prevention of safeTime propagation.
+     */
 //    @Test
 //    public void testClosedGaps() throws Exception {
 //        createCluster();
@@ -523,81 +405,120 @@ public class ReplicationGroup2NodesTest extends BasicReplicationTest {
 //        fail();
 //    }
 //
-//    /**
-//     * Tests if a lease can always be refreshed if current holder is available.
-//     */
-//    @Test
-//    public void testAssignNoMajority() throws InterruptedException {
-//        createCluster();
-//
-//        adjustClocks(Tracker.LEASE_DURATION / 2);
-//
-//        assertNotNull(top.getNodeMap().remove(bob));
-//
-//        Timestamp ts = tracker.assignLeader(GRP_NAME, leader, nodeIds).join();
-//        waitLeader(ts, leader, tracker, top, GRP_NAME);
-//
-//        validate(leader);
-//
-//        Node leaseholder = top.getNode(leader);
-//
-//        CompletableFuture<Timestamp> fut = leaseholder.replicate(GRP_NAME, new Put(0, 0));
-//        assertThrows(CompletionException.class, () -> fut.join(), "Replication must fail");
-//    }
-//
-//    /**
-//     * Tests if a leader can be reassigned to any alive node if replication factor matches group size. Currently this is true for 2 node cluster. Need replication factor support for larger clusters.
-//     */
-//    @Test
-//    public void testReassignNoMajority() {
-//        createCluster();
-//
-//        adjustClocks(Tracker.LEASE_DURATION + Tracker.MAX_CLOCK_SKEW);
-//
-//        assertNotNull(top.getNodeMap().remove(bob));
-//
-//        Timestamp ts = tracker.assignLeader(GRP_NAME, leader, nodeIds).join();
-//        waitLeader(ts, leader, tracker, top, GRP_NAME);
-//
-//        validate(leader);
-//    }
-//
-//    @Test
-//    public void testReassignEmpty() {
-//        createCluster();
-//
-//        adjustClocks(Tracker.LEASE_DURATION + Tracker.MAX_CLOCK_SKEW);
-//
-//        assertNotNull(top.getNodeMap().remove(alice));
-//        assertNotNull(top.getNodeMap().remove(bob));
-//
-//        assertThrows(CompletionException.class, () -> tracker.assignLeader(GRP_NAME, leader, nodeIds).join(), "Can't assign on empty group");
-//    }
-//
-//    /**
-//     * Tests reverting partially replicated operation.
-//     *
-//     */
-//    @Test
-//    public void testRollbackNonExisting() {
-//        createCluster();
-//
-//        int val = 0;
-//        Node leaseholder = top.getNode(leader);
-//        Timestamp ts = leaseholder.replicate(GRP_NAME, new Put(val, val)).join();// Init replicators.
-//
-//        for (Node value : top.getNodeMap().values()) {
-//            assertEquals(val, value.localGet(GRP_NAME, val, ts).join());
-//        }
-//
-//        Replicator toBob = leaseholder.group(GRP_NAME).replicators.get(bob);
-//        toBob.client().block(request -> request.getPayload() instanceof Replicate);
-//
-//        val++;
-//        CompletableFuture<Timestamp> fut = leaseholder.replicate(GRP_NAME, new Put(val, val));
-//        assertTrue(waitForCondition(() -> toBob.client().blocked().size() == 1, 1_000));
-//        assertThrows(CompletionException.class, () -> fut.join());
-//    }
+    /**
+     * Tests if a lease can always be refreshed if current holder is available.
+     */
+    @Test
+    public void testAssignNoMajority() throws InterruptedException {
+        createCluster();
+
+        adjustClocks(Tracker.LEASE_DURATION / 2);
+
+        assertNotNull(top.getNodeMap().remove(bob));
+
+        Timestamp ts = tracker.assignLeader(GRP_NAME, alice, nodeIds).join();
+        waitLeader(ts, alice, tracker, top, GRP_NAME);
+
+        validate(alice);
+
+        Node leader = top.getNode(alice);
+
+        CompletableFuture<Timestamp> fut = leader.replicate(GRP_NAME, new Put(0, 0));
+        assertThrows(CompletionException.class, () -> fut.join(), "Replication must fail");
+    }
+
+    /**
+     * Tests if a leader can be reassigned to any alive node if replication factor matches group size. Currently this is true for 2 node cluster. Need replication factor support for larger clusters.
+     */
+    @Test
+    public void testReassignNoMajority() {
+        createCluster();
+
+        adjustClocks(Tracker.LEASE_DURATION + Tracker.MAX_CLOCK_SKEW);
+
+        assertNotNull(top.getNodeMap().remove(bob));
+
+        Timestamp ts = tracker.assignLeader(GRP_NAME, alice, nodeIds).join();
+        waitLeader(ts, alice, tracker, top, GRP_NAME);
+
+        validate(alice);
+    }
+
+    @Test
+    public void testReassignEmpty() {
+        createCluster();
+
+        adjustClocks(Tracker.LEASE_DURATION + Tracker.MAX_CLOCK_SKEW);
+
+        assertNotNull(top.getNodeMap().remove(alice));
+        assertNotNull(top.getNodeMap().remove(bob));
+
+        assertThrows(CompletionException.class, () -> tracker.assignLeader(GRP_NAME, alice, nodeIds).join(), "Can't assign on empty group");
+    }
+
+    /**
+     * Tests if a failed replication disables a replicator.
+     *
+     */
+    @Test
+    public void testBrokenPipe() {
+        createCluster();
+
+        Node leader = top.getNode(alice);
+        leader.replicate(GRP_NAME, new Put(val, val)).join(); // Init replicators.
+        waitReplication();
+
+        Group grp0 = top.getNode(alice).group(GRP_NAME);
+        Group grp1 = top.getNode(bob).group(GRP_NAME);
+
+        long cntr0 = grp0.getRepCntr();
+        Timestamp ts0 = grp0.getRepTs();
+
+        Replicator toBob = leader.group(GRP_NAME).replicators.get(bob);
+        toBob.client().block(request -> request.getPayload() instanceof Replicate);
+
+        val++;
+        CompletableFuture<Timestamp> fut = leader.replicate(GRP_NAME, new Put(val, val));
+        assertTrue(waitForCondition(() -> toBob.client().blocked().size() == 1, 1_000));
+        assertThrows(CompletionException.class, () -> fut.join());
+
+        assertEquals(cntr0, grp0.getSafeCntr());
+        assertEquals(ts0, grp0.getSafeTs());
+
+        assertEquals(cntr0, grp1.getRepCntr());
+        assertEquals(ts0, grp1.getRepTs());
+
+        assertTrue(grp0.replicators.get(bob).broken());
+
+        toBob.client().clearBlock();
+
+        val++;
+        CompletableFuture<Timestamp> fut2 = leader.replicate(GRP_NAME, new Put(val, val));
+        assertThrows(CompletionException.class, () -> fut2.join());
+    }
+
+    @Test
+    public void testCatchUpWithRefresh() {
+        testBrokenPipe();
+
+        adjustClocks(Tracker.LEASE_DURATION / 2);
+
+        assertNotNull(top.getNodeMap().remove(bob));
+
+        Set<NodeId> nodeIds2 = new HashSet<>(nodeIds);
+        nodeIds2.remove(bob);
+
+        Timestamp ts = tracker.assignLeader(GRP_NAME, alice, nodeIds2).join();
+        waitLeader(ts, alice, tracker, top, GRP_NAME);
+
+        Node leader = top.getNode(alice);
+
+        assertTrue(leader.group(GRP_NAME).replicators.get(bob) == null); // Replicator should be removed on node removal.
+
+        val++;
+        leader.replicate(GRP_NAME, new Put(val, val)).join();
+        waitReplication();
+    }
 //
 //    /**
 //     * Tests if a Put operation can't be committed ahead of pending Configure.
@@ -735,18 +656,18 @@ public class ReplicationGroup2NodesTest extends BasicReplicationTest {
 //        fail();
 //    }
 //
-//    /**
-//     * Tests if a non leader is attempting to replicate.
-//     */
-//    @Test
-//    public void testNonLeaderReplication() {
-//        createCluster();
-//
-//        Node leaseholder = top.getNode(alice);
-//        leaseholder.replicate(GRP_NAME, new Put(0, 0)).join();
-//
-//        assertThrows(CompletionException.class, () -> top.getNode(bob).replicate(GRP_NAME, new Put(0, 0)).join());
-//    }
+    /**
+     * Tests if a non leader is attempting to replicate.
+     */
+    @Test
+    public void testNonLeaderReplication() {
+        createCluster();
+
+        Node leader = top.getNode(alice);
+        leader.replicate(GRP_NAME, new Put(0, 0)).join();
+
+        assertThrows(CompletionException.class, () -> top.getNode(bob).replicate(GRP_NAME, new Put(0, 0)).join());
+    }
 
 //    private void validate(int val) {
 //        for (Node value : top.getNodeMap().values()) {

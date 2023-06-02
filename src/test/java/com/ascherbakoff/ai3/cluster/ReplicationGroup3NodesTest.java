@@ -14,6 +14,7 @@ import com.ascherbakoff.ai3.replication.Inflight;
 import com.ascherbakoff.ai3.replication.Request;
 import java.lang.System.Logger.Level;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.CountDownLatch;
@@ -87,7 +88,7 @@ public class ReplicationGroup3NodesTest extends BasicReplicationTest {
         assertEquals(1, grp2.getRepCntr());
     }
 
-//    @Test
+    //    @Test
 //    public void testBasicReplication() throws InterruptedException {
 //        createCluster();
 //
@@ -100,46 +101,52 @@ public class ReplicationGroup3NodesTest extends BasicReplicationTest {
 //        }
 //    }
 //
-//    @Test
-//    public void testSendConcurrent() throws InterruptedException {
-//        createCluster();
-//
-//        Executor senderPool = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors() * 2);
-//
-//        int msgCnt = 1000;
-//
-//        AtomicInteger gen = new AtomicInteger();
-//        AtomicInteger errCnt = new AtomicInteger();
-//        CountDownLatch l = new CountDownLatch(msgCnt);
-//
-//        long ts = System.nanoTime();
-//
-//        while (msgCnt-- > 0) {
-//            senderPool.execute(() -> {
-//                int val = gen.incrementAndGet();
-//                top.getNode(leader).replicate(GRP_NAME, new Put(val, val)).exceptionally(err -> {
-//                    errCnt.incrementAndGet();
-//                    LOGGER.log(Level.ERROR, "Failed to replicate", err);
-//                    return null;
-//                }).thenAccept(r -> l.countDown());
-//            });
-//        }
-//
-//        l.await();
-//
-//        assertEquals(0, l.getCount());
-//        assertEquals(0, errCnt.get());
-//
-//        LOGGER.log(Level.INFO, "Finished sending messages, duration {0}ms", (System.nanoTime() - ts) / 1000 / 1000.);
-//
-//        Timestamp lwm0 = top.getNode(leader).group(GRP_NAME).repTs;
-//
-//        for (int i = 0; i < msgCnt; i++) {
-//            for (Node node : top.getNodeMap().values()) {
-//                assertEquals(i, node.localGet(GRP_NAME, i, lwm0).join());
-//            }
-//        }
-//    }
+    @Test
+    public void testSendConcurrent() throws InterruptedException {
+        createCluster();
+
+        Executor senderPool = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors() * 2);
+
+        int msgCntr = 1000;
+        int cntr = msgCntr;
+
+        AtomicInteger gen = new AtomicInteger();
+        AtomicInteger errCnt = new AtomicInteger();
+        CountDownLatch l = new CountDownLatch(msgCntr);
+
+        long ts = System.nanoTime();
+
+        Node leader = top.getNode(alice);
+
+        while (cntr-- > 0) {
+            senderPool.execute(() -> {
+                int val = gen.incrementAndGet();
+                leader.replicate(GRP_NAME, new Put(val, val)).exceptionally(err -> {
+                    errCnt.incrementAndGet();
+                    LOGGER.log(Level.ERROR, "Failed to replicate", err);
+                    return null;
+                }).thenAccept(r -> l.countDown());
+            });
+        }
+
+        l.await();
+
+        assertEquals(0, l.getCount());
+        assertEquals(0, errCnt.get());
+
+        LOGGER.log(Level.INFO, "Finished sending messages, duration {0}ms", (System.nanoTime() - ts) / 1000 / 1000.);
+
+        waitFullReplication();
+
+        TreeMap<Timestamp, Replicate> snapIdx = leader.group(GRP_NAME).snapIdx;
+        TreeMap<Timestamp, Replicate> snapIdx2 = top.getNode(bob).group(GRP_NAME).snapIdx;
+        TreeMap<Timestamp, Replicate> snapIdx3 = top.getNode(charlie).group(GRP_NAME).snapIdx;
+
+        assertEquals(msgCntr, snapIdx.size());
+        assertEquals(snapIdx, snapIdx2);
+        assertEquals(snapIdx2, snapIdx3);
+    }
+
 //
 //    @Test
 //    public void testLeaseholderFailure() {

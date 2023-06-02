@@ -5,8 +5,10 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.ascherbakoff.ai3.clock.Timestamp;
+import com.ascherbakoff.ai3.replication.Replicator;
 import com.ascherbakoff.ai3.util.BasicTest;
 import java.util.HashSet;
+import java.util.Map.Entry;
 import java.util.Set;
 import org.jetbrains.annotations.Nullable;
 
@@ -38,15 +40,44 @@ public class BasicReplicationTest extends BasicTest {
         }
     }
 
-
     protected void waitReplication() {
-        Timestamp repTs = top.getNode(alice).group(GRP_NAME).getRepTs();
+        Node leader = top.getNode(alice);
+        Timestamp repTs = leader.group(GRP_NAME).getRepTs();
+        long repCntr = leader.group(GRP_NAME).getRepCntr();
 
         for (Node node : top.getNodeMap().values()) {
             assertTrue(waitForCondition(() -> {
                 return top.getNode(node.id()).group(GRP_NAME).getRepTs().equals(repTs);
-            }, 1_000), "Failed to wait for repTs: nodeId=" + node.id() + ", ts=" + repTs + ", real=" + top.getNode(node.id()).group(GRP_NAME).getRepTs());
+            }, 1_000), "Failed to wait for safeTs: nodeId=" + node.id() + ", exp=" + repTs + ", actual=" + top.getNode(node.id()).group(GRP_NAME).getRepTs());
         }
+
+        assertTrue(waitForCondition(() -> {
+            Timestamp safeTs = leader.group(GRP_NAME).getSafeTs();
+            return safeTs.equals(repTs);
+        }, 1_000), "Failed to wait for repTs: exp=" + repTs + ", actual=" + leader.group(GRP_NAME).getSafeTs());
+
+        assertEquals(repCntr, leader.group(GRP_NAME).getSafeCntr());
+    }
+
+    protected void waitFullReplication() {
+        Node leader = top.getNode(alice);
+        Timestamp repTs = leader.group(GRP_NAME).getRepTs();
+        long repCntr = leader.group(GRP_NAME).getRepCntr();
+
+        assertTrue(waitForCondition(() -> {
+            Timestamp safeTs = leader.group(GRP_NAME).getSafeTs();
+            return safeTs.equals(repTs);
+        }, 1_000), "Failed to wait for repTs: exp=" + repTs + ", actual=" + leader.group(GRP_NAME).getSafeTs());
+
+        Set<Entry<NodeId, Replicator>> entries = leader.group(GRP_NAME).replicators.entrySet();
+
+        for (Entry<NodeId, Replicator> entry : entries) {
+            assertTrue(waitForCondition(() -> {
+                return repTs.equals(entry.getValue().getRepTs());
+            }, 1_000), "Failed to wait for repTs: exp=" + repTs + ", actual=" + entry.getValue().getRepTs());
+        }
+
+        assertEquals(repCntr, leader.group(GRP_NAME).getSafeCntr());
     }
 
     protected void validate(@Nullable NodeId leader, NodeId... exclude) {
