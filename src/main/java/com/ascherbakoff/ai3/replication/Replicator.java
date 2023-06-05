@@ -38,13 +38,12 @@ public class Replicator {
 
     private boolean broken;
 
-    public Replicator(Node node, NodeId nodeId, String grp, Topology topology, long cntr) {
+    public Replicator(Node node, NodeId nodeId, String grp, Topology topology) {
         this.node = node;
         this.grp = grp;
         this.nodeId = nodeId;
         this.topology = topology;
         this.client = new RpcClient(topology);
-        this.repCntr = cntr;
     }
 
     public Inflight send(Request request) {
@@ -66,7 +65,7 @@ public class Replicator {
         return inflight;
     }
 
-    public void fold() {
+    private void fold() {
         Set<Entry<Long, Inflight>> set = inflights.entrySet();
 
         Iterator<Entry<Long, Inflight>> iter = set.iterator();
@@ -83,12 +82,9 @@ public class Replicator {
                 return; // TODO replicator is broken.
             }
 
-            if (repCntr + 1 != entry.getKey()) {
+            if (entry.getKey() > repCntr) {
                 return;
             }
-
-            repTs = entry.getValue().ts();
-            repCntr = entry.getKey();
             iter.remove();
         }
     }
@@ -126,5 +122,13 @@ public class Replicator {
 
     public boolean broken() {
         return broken;
+    }
+
+    public void onResponse(ReplicateResponse resp0) {
+        if (resp0.getRepCntr() > repCntr) {
+            this.repCntr = resp0.getRepCntr();
+            this.repTs = resp0.getRepTs();
+            fold();
+        }
     }
 }

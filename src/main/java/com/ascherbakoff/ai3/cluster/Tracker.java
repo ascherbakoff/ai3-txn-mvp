@@ -7,6 +7,7 @@ import com.ascherbakoff.ai3.replication.Replicator;
 import com.ascherbakoff.ai3.replication.Request;
 import com.ascherbakoff.ai3.replication.RpcClient;
 import java.lang.System.Logger.Level;
+import java.util.HashSet;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
@@ -49,7 +50,7 @@ public class Tracker {
         Request request = new Request();
         request.setGrp(name);
         request.setTs(from);
-        request.setPayload(new LeaseProposed(name, from, members));
+        request.setPayload(new LeaseProposed(name, from, new HashSet<>(members)));
 
         return client.send(candidate, request).orTimeout(Replicator.TIMEOUT_SEC, TimeUnit.SECONDS).handle((response, err) -> {
             // TODO handle redirect.

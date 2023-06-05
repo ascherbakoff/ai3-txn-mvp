@@ -9,6 +9,7 @@ import com.ascherbakoff.ai3.replication.LeaseGranted;
 import com.ascherbakoff.ai3.replication.LeaseProposed;
 import com.ascherbakoff.ai3.replication.Put;
 import com.ascherbakoff.ai3.replication.Replicate;
+import com.ascherbakoff.ai3.replication.ReplicateResponse;
 import com.ascherbakoff.ai3.replication.Replicator;
 import com.ascherbakoff.ai3.replication.Request;
 import com.ascherbakoff.ai3.replication.Response;
@@ -18,6 +19,7 @@ import com.ascherbakoff.ai3.replication.Sync;
 import java.lang.System.Logger.Level;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Set;
@@ -116,7 +118,7 @@ public class Node {
         Object data = replicate.getData();
         if (data instanceof Put) {
             grp.accept(request.getTs(), replicate, false);
-            resp.complete(new Response(now));
+            resp.complete(new ReplicateResponse(now, grp.getRepCntr(), grp.getRepTs()));
         } else {
             resp.complete(new Response(now, 1, "Unsupported command"));
         }
@@ -180,8 +182,6 @@ public class Node {
 
         // Skip validation if lease is extended.
         if (leaseExtended) {
-            resp.complete(new Response(now));
-
             // Asynchronously notify alive members.
             for (NodeId nodeId0 : members) {
                 Request request = new Request();
@@ -250,6 +250,12 @@ public class Node {
             return;
         }
 
+        boolean leaseExtended = false;
+
+        if (prev != null && from.compareTo(prev.adjust(Tracker.LEASE_DURATION)) < 0 && leaseholder.equals(group.getLeader())) {
+            leaseExtended = true;
+        }
+
         group.setLeader(leaseholder);
         group.setLease(from);
         assert group.validLease(from, leaseholder);
@@ -264,12 +270,47 @@ public class Node {
 //            assert !leaseholder.equals(nodeId) : "Catching up node can't be leaseholder";
 //        }
 
+        // TODO catch up.
         if (id().equals(leaseholder)) {
-            LOGGER.log(Level.INFO, "I am the leader: [interval={0}:{1}, at={2}, nodeId={3}, loc={4}, grp={5}]", from,
-                    from.adjust(Tracker.LEASE_DURATION), now, nodeId, group.getRepCntr(), maxCntr);
+            // Remove stale replicators.
+            Iterator<Entry<NodeId, Replicator>> it = group.replicators.entrySet().iterator();
+
+            while (it.hasNext()) {
+                Entry<NodeId, Replicator> entry = it.next();
+
+                if (!members.contains(entry.getKey())) {
+                    it.remove();
+                }
+            }
+
+            for (NodeId member : members) {
+                if (member.equals(leaseholder))
+                    continue;
+
+                Replicator replicator = group.replicators.get(member);
+                if (replicator == null) {
+                    replicator = new Replicator(this, member, grp, top);
+                    group.replicators.put(member, replicator);
+                }
+            }
+
+            if (!leaseExtended) {
+                group.setRepTs(now);
+                group.setRepCntr(maxCntr);
+            }
+
+            group.updateSafe();
+
+            LOGGER.log(Level.INFO, "I am the leader: [interval={0}:{1}, at={2}, nodeId={3}, loc={4}, grp={5}, refresh={6}]", from,
+                    from.adjust(Tracker.LEASE_DURATION), now, nodeId, group.getRepCntr(), maxCntr, leaseExtended);
         } else {
-            LOGGER.log(Level.INFO, "Set leader: [interval={0}:{1}, at={2}], nodeId={3}, loc={4}, grp={5}", from,
-                    from.adjust(Tracker.LEASE_DURATION), now, nodeId, group.getRepCntr(), maxCntr);
+            if (!leaseExtended) {
+                group.setRepTs(now);
+                group.setRepCntr(maxCntr);
+            }
+
+            LOGGER.log(Level.INFO, "Set leader: [interval={0}:{1}, at={2}], nodeId={3}, loc={4}, grp={5}, refresh={6}", from,
+                    from.adjust(Tracker.LEASE_DURATION), now, nodeId, group.getRepCntr(), maxCntr, leaseExtended);
         }
 
         resp.complete(new Response(now));
@@ -369,7 +410,9 @@ public class Node {
                     continue;
                 }
 
-                Replicator replicator = createReplicator(grp, id, cntr - 1);
+                Replicator replicator = getReplicator(grp, id);
+
+                assert replicator != null;
 
                 Request request = new Request(); // Creating the request copy is essential.
                 request.setTs(now);
@@ -392,7 +435,9 @@ public class Node {
                         succ.incrementAndGet();
                     }
 
-                    finalReplicator.fold();
+                    ReplicateResponse resp0 = (ReplicateResponse) resp;
+
+                    finalReplicator.onResponse(resp0);
 
                     if (succ.get() + errs.get() >= maj) {
                         if (errs.get() > nodeIds.size() - maj) { // Can tolerate minority fails
@@ -411,18 +456,6 @@ public class Node {
         });
 
         return resFut;
-    }
-
-    public Replicator createReplicator(String grp, NodeId id, long cntr) {
-        Group group = groups.get(grp);
-
-        Replicator replicator = group.replicators.get(id);
-        if (replicator == null) {
-            replicator = new Replicator(this, id, grp, top, cntr); // TODO do we need to pass top ?
-            group.replicators.put(id, replicator);
-        }
-
-        return replicator;
     }
 
     public Replicator getReplicator(String grp, NodeId id) {
@@ -526,11 +559,14 @@ public class Node {
                 for (NodeId id : nodeIds) {
                     // Handle local node.
                     if (id.equals(nodeId)) {
-                        group.setRepTs(now); // TODO leader can use current ts as repTs.
+                        group.setSafeTs(now);
+                        group.setRepTs(now); // TODO leader can use current HLC ts as repTs.
                         continue;
                     }
 
-                    Replicator replicator = createReplicator(grp, id, group.getRepCntr());
+                    Replicator replicator = getReplicator(grp, id);
+
+                    assert replicator != null;
 
                     if (replicator.inflights() != 0) {
                         continue;
@@ -571,7 +607,8 @@ public class Node {
 
     private void callback(Timestamp now, Map<NodeId, Long> cntrs, NodeId nodeId, Long cntr, Set<NodeId> members, Timestamp from,
             Group group, NodeId candidate, CompletableFuture<Response> resp) {
-        LOGGER.log(Level.INFO, "Received response [group={0}, leaseholder={1}, cntr={2}, node={3}]", group.getName(), candidate, cntr, nodeId);
+        LOGGER.log(Level.INFO, "Received response [group={0}, leaseholder={1}, cntr={2}, node={3}]", group.getName(), candidate, cntr,
+                nodeId);
 
         if (resp.isDone()) {
             return;
@@ -630,7 +667,8 @@ public class Node {
                 }
 
                 if (resp.complete(new Response(now))) {
-                    LOGGER.log(Level.INFO, "Collected majority of counters: [group={0}, leaseholder={1}, max={2}]", group.getName(), candidate, maxCntr);
+                    LOGGER.log(Level.INFO, "Collected majority of counters: [group={0}, leaseholder={1}, max={2}]", group.getName(),
+                            candidate, maxCntr);
                     // Asynchronously propagate the lease.
                     Request request = new Request();
                     request.setGrp(group.getName());

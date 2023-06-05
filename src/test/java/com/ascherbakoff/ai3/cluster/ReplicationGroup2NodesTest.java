@@ -497,27 +497,43 @@ public class ReplicationGroup2NodesTest extends BasicReplicationTest {
         assertThrows(CompletionException.class, () -> fut2.join());
     }
 
+    /**
+     * Tests a dead node re-joins and catches up with the group.
+     */
     @Test
     public void testCatchUpWithRefresh() {
-        testBrokenPipe();
+        createCluster();
+
+        Node leader = top.getNode(alice);
+        leader.replicate(GRP_NAME, new Put(val, val)).join(); // Init replicators.
+        waitReplication();
 
         adjustClocks(Tracker.LEASE_DURATION / 2);
 
+        Node bobNode = top.getNode(bob);
+
         assertNotNull(top.getNodeMap().remove(bob));
 
-        Set<NodeId> nodeIds2 = new HashSet<>(nodeIds);
-        nodeIds2.remove(bob);
-
-        Timestamp ts = tracker.assignLeader(GRP_NAME, alice, nodeIds2).join();
+        Timestamp ts = tracker.assignLeader(GRP_NAME, alice, top.getNodeMap().keySet()).join();
         waitLeader(ts, alice, tracker, top, GRP_NAME);
-
-        Node leader = top.getNode(alice);
 
         assertTrue(leader.group(GRP_NAME).replicators.get(bob) == null); // Replicator should be removed on node removal.
 
         val++;
         leader.replicate(GRP_NAME, new Put(val, val)).join();
         waitReplication();
+
+        // Restore node in topology.
+        top.regiser(bobNode);
+
+        ts = tracker.assignLeader(GRP_NAME, alice, top.getNodeMap().keySet()).join();
+        waitLeader(ts, alice, tracker, top, GRP_NAME);
+
+        val++;
+        leader.replicate(GRP_NAME, new Put(val, val)).join();
+        waitReplication();
+
+        System.out.println();
     }
 //
 //    /**
