@@ -26,6 +26,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.locks.LockSupport;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -531,6 +532,7 @@ public class ReplicationGroup2NodesTest extends BasicReplicationTest {
 
         val++;
         leader.replicate(GRP_NAME, new Put(val, val)).join();
+
         waitReplication();
 
         System.out.println();

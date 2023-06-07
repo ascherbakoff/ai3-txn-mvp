@@ -28,9 +28,9 @@ public class Replicator {
 
     private Topology topology;
 
-    private long repCntr;
+    private long repCntr = 0;
 
-    private Timestamp repTs;
+    private Timestamp repTs = Timestamp.min();
 
     private TreeMap<Long, Inflight> inflights = new TreeMap<>(); // TODO treeset ?
 
@@ -129,6 +129,12 @@ public class Replicator {
             this.repCntr = resp0.getRepCntr();
             this.repTs = resp0.getRepTs();
             fold();
+        }
+    }
+
+    public void failInflights() {
+        for (Inflight value : inflights.values()) {
+            value.ioFuture().completeExceptionally(new Exception("Replicator removed"));
         }
     }
 }

@@ -30,13 +30,13 @@ public class Group {
     // Replication update counter.
     private long repCntr;
 
-    // Replication timestamp (low watermark)
+    // Replication timestamp.
     private Timestamp repTs = Timestamp.min();
 
     // Replicators for this group on a leader.
     Map<NodeId, Replicator> replicators = new HashMap<>();
 
-    // Replica inflights.
+    // Replica inflights (used by replica).
     private TreeMap<Long, Inflight> repInflights = new TreeMap<Long, Inflight>();
 
     // Snap index.
@@ -50,7 +50,7 @@ public class Group {
     // Group state.
     private @Nullable Timestamp lease;
     private @Nullable NodeId leader;
-    private @Nullable Set<NodeId> members;
+    private Set<NodeId> members = Collections.emptySet();
 
     // Read requests, waiting for repTs.
     public TreeMap<Timestamp, Read> pendingReads = new TreeMap<>();
@@ -84,7 +84,7 @@ public class Group {
     }
 
     public Set<NodeId> getMembers() {
-        return members == null ? Collections.emptySet() : members;
+        return members;
     }
 
     public void setState(Set<NodeId> members) {
@@ -137,19 +137,13 @@ public class Group {
 
     public boolean validLease(Timestamp at, NodeId leaseHolder) {
         if (!leaseHolder.equals(this.leader)) // Take into account the case of no leaseholder at all.
+        {
             return false;
+        }
 
         assert lease != null;
 
         return lease.compareTo(at) <= 0 && at.compareTo(lease.adjust(Tracker.LEASE_DURATION)) < 0 ? true : false;
-    }
-
-    public int size() {
-        return members.size();
-    }
-
-    public int majority() {
-        return size() / 2 + 1;
     }
 
     public long nextCounter() {
@@ -188,35 +182,51 @@ public class Group {
     public void setIdle(Timestamp ts) {
         assert repInflights.isEmpty();
 
-        if (ts.compareTo(this.repTs) > 0)
+        if (ts.compareTo(this.repTs) > 0) {
             this.repTs = ts;
+        }
     }
 
     public Timestamp getRepTs() {
         return repTs;
     }
 
+    // safeTs is updated on stable topology.
     public void updateSafe() {
         int maj = majority();
 
         if (maj == 1) {
             this.safeCntr = repCntr;
             this.safeTs = repTs;
-            return;
-        }
+        } else {
+            // Retain only stable replicators. TODO optimize.
+            Set<Replicator> stableReps = new HashSet<>();
+            Iterator<Entry<NodeId, Replicator>> iter = replicators.entrySet().iterator();
 
-        Replicator[] arr = replicators.values().toArray(Replicator[]::new);
+            while (iter.hasNext()) {
+                Entry<NodeId, Replicator> entry = iter.next();
 
-        Arrays.sort(arr, new Comparator<Replicator>() {
-            @Override
-            public int compare(Replicator o1, Replicator o2) {
-                return Long.compare(o2.getRepCntr(), o1.getRepCntr());
+                if (getMembers().contains(entry.getKey()))
+                    stableReps.add(entry.getValue());
             }
-        });
 
-        // Ignore first element.
-        safeCntr = arr[maj - 2].getRepCntr();
-        safeTs = arr[maj - 2].getRepTs();
+            Replicator[] arr = stableReps.toArray(Replicator[]::new);
+
+            Arrays.sort(arr, new Comparator<Replicator>() {
+                @Override
+                public int compare(Replicator o1, Replicator o2) {
+                    return Long.compare(o2.getRepCntr(), o1.getRepCntr());
+                }
+            });
+
+            // Ignore first element.
+            safeCntr = arr[maj - 2].getRepCntr();
+            safeTs = arr[maj - 2].getRepTs();
+        }
+    }
+
+    public int majority() {
+        return members.size() / 2 + 1;
     }
 
     public void setRepTs(Timestamp now) {
@@ -235,13 +245,20 @@ public class Group {
         return members;
     }
 
-    public void setRepCntr(long maxCntr) {
-        this.repCntr = maxCntr;
+    public void setRepCntr(long cntr) {
+        this.repCntr = cntr;
         assert repCntr >= safeCntr;
     }
 
     public void setSafeTs(Timestamp now) {
         this.safeTs = now;
         assert repCntr >= safeCntr;
+    }
+
+    public void reset() {
+        setState(Collections.emptySet());
+        replicators.clear();
+        repCntr = safeCntr = 0;
+        repTs = safeTs = Timestamp.min();
     }
 }
