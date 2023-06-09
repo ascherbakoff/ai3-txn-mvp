@@ -40,7 +40,7 @@ public class Group {
     // Replica inflights (used by replica).
     private TreeMap<Long, Inflight> repInflights = new TreeMap<Long, Inflight>();
 
-    // Snap index.
+    // Snap index. TODO compaction.
     TreeMap<Timestamp, Replicate> snapIdx = new TreeMap<Timestamp, Replicate>();
 
     // Maintained on a leader.

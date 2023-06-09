@@ -149,14 +149,12 @@ public class Node {
     }
 
     public void visit(Snapshot snapshot, Request request, CompletableFuture<Response> resp) {
-        // TODO validate request from the same epoch.
+        // TODO validate request from the same epoch. May NPE
         Group grp = groups.get(request.getGrp());
-        boolean catchedUp = false;
-        if (snapshot.getCntr() >= grp.getSafeCntr()) {
-            catchedUp = true;
-            // Move to operational.
-            assert grp.replicators.containsKey(request.getSender());
-            grp.addMember(request.getSender());
+        boolean catchedUp = grp.replicators.get(request.getSender()).onCatchup(snapshot.getCntr(), snapshot.getLow());
+
+        if (catchedUp) {
+            grp.addMember(request.getSender()); // Move to operational.
         }
 
         resp.complete(new SnapshotResponse(clock.now(), grp.snapshot(snapshot.getLow(), snapshot.getHigh()), catchedUp ? null : grp.getSafeTs()));
@@ -462,13 +460,14 @@ public class Node {
                     }
 
                     // Don't count learners.
-                    if (!stableIds.contains(id)) {
+                    if (!stableIds.contains(id) && resp != null) {
                         LOGGER.log(Level.INFO,
                                 "Received ack from learner: cntr={0} ts={1} node={2} sucs={3} errs={4} maj={5} done={6} err={7}",
                                 inflight.getReplicate().getCntr(), inflight.ts(), id, succ.get(), errs.get(), maj, resFut.isDone(),
                                 resFut.isCompletedExceptionally());
 
-                        finalReplicator.onResponse((ReplicateResponse) resp);
+                        ReplicateResponse resp1 = (ReplicateResponse) resp;
+                        finalReplicator.onResponse(resp1.getRepCntr(), resp1.getRepTs());
                         return;
                     }
 
@@ -477,7 +476,8 @@ public class Node {
                     } else {
                         succ.incrementAndGet();
 
-                        finalReplicator.onResponse((ReplicateResponse) resp);
+                        ReplicateResponse resp1 = (ReplicateResponse) resp;
+                        finalReplicator.onResponse(resp1.getRepCntr(), resp1.getRepTs());
                     }
 
                     if (succ.get() + errs.get() >= maj) {
@@ -531,8 +531,8 @@ public class Node {
             // TODO make async
             group.setSnapshot(snapshot);
 
-            LOGGER.log(Level.INFO, "Loaded delta snapshot [grp={0}, missed={1}:{2}, next={3}, leader={4}]", grpName, group.getRepTs(),
-                    maxTs, snapResp.getCurrent(), leaseHolder);
+            LOGGER.log(Level.INFO, "Loaded delta snapshot [grp={0}, missed={1}:{2}, next={3}, leader={4}, node={5}]", grpName, group.getRepTs(),
+                    maxTs, snapResp.getCurrent(), leaseHolder, nodeId);
 
             if (snapResp.getCurrent() != null) {
                 catchUp(grpName, snapResp.getCurrent());

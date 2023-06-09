@@ -5,6 +5,7 @@ import com.ascherbakoff.ai3.cluster.Node;
 import com.ascherbakoff.ai3.cluster.NodeId;
 import com.ascherbakoff.ai3.cluster.Topology;
 import java.lang.System.Logger.Level;
+import java.sql.Time;
 import java.util.Iterator;
 import java.util.Map.Entry;
 import java.util.Set;
@@ -32,7 +33,7 @@ public class Replicator {
 
     private Timestamp repTs = Timestamp.min();
 
-    private TreeMap<Long, Inflight> inflights = new TreeMap<>(); // TODO treeset ?
+    private TreeMap<Long, Inflight> inflights = new TreeMap<>(); // TODO treeset ? TODO store only lwm for catching up replicator.
 
     private RpcClient client;
 
@@ -124,10 +125,10 @@ public class Replicator {
         return broken;
     }
 
-    public void onResponse(ReplicateResponse resp0) {
-        if (resp0.getRepCntr() > repCntr) {
-            this.repCntr = resp0.getRepCntr();
-            this.repTs = resp0.getRepTs();
+    public void onResponse(long cntr, Timestamp ts) {
+        if (cntr > repCntr) {
+            this.repCntr = cntr;
+            this.repTs = ts;
             fold();
         }
     }
@@ -136,5 +137,18 @@ public class Replicator {
         for (Inflight value : inflights.values()) {
             value.ioFuture().completeExceptionally(new Exception("Replicator removed"));
         }
+    }
+
+    public boolean onCatchup(long cntr, Timestamp low) {
+        long threshold = Math.max(repCntr, inflights.isEmpty() ? 0 : inflights.firstKey());
+
+        if (cntr >= threshold) { // Consumed the gap.
+            this.repCntr = cntr;
+            this.repTs = low;
+            fold();
+            return true;
+        }
+
+        return false;
     }
 }
