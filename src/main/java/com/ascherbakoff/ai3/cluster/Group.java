@@ -151,13 +151,16 @@ public class Group {
     }
 
     public void accept(Timestamp repTs, Replicate replicate, boolean local) {
+        if (!local && this.repTs.compareTo(repTs) > 0)
+            return; // Already replicated by catch up.
+
         // Track out of order updates on replica.
         Inflight inflight = new Inflight(repTs, replicate, null);
 
         snapIdx.put(repTs, replicate);
 
         if (local) {
-            setRepTs(repTs);
+            setRepTs(repTs); // Counter is already updated in the caller.
             return;
         }
 
@@ -260,5 +263,9 @@ public class Group {
         replicators.clear();
         repCntr = safeCntr = 0;
         repTs = safeTs = Timestamp.min();
+    }
+
+    public void setSnapshot(TreeMap<Timestamp, Replicate> snapshot) {
+        // TODO
     }
 }

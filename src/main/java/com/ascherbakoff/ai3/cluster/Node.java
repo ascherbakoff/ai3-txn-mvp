@@ -15,6 +15,7 @@ import com.ascherbakoff.ai3.replication.Request;
 import com.ascherbakoff.ai3.replication.Response;
 import com.ascherbakoff.ai3.replication.RpcClient;
 import com.ascherbakoff.ai3.replication.Snapshot;
+import com.ascherbakoff.ai3.replication.SnapshotResponse;
 import com.ascherbakoff.ai3.replication.Sync;
 import java.lang.System.Logger.Level;
 import java.util.HashMap;
@@ -23,6 +24,7 @@ import java.util.Iterator;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
@@ -125,7 +127,7 @@ public class Node {
     }
 
     public void visit(LeaseGranted lease, Request request, CompletableFuture<Response> resp) {
-        grant(request.getTs(), lease.name(), lease.from(), lease.candidate(), lease.members(), lease.getRepCntr(), resp);
+        grant(request.getTs(), lease.name(), lease.from(), lease.candidate(), lease.members(), lease.getTs(), resp);
     }
 
     public void visit(LeaseProposed lease, Request request, CompletableFuture<Response> resp) {
@@ -143,13 +145,13 @@ public class Node {
     public void visit(Collect collect, Request request, CompletableFuture<Response> resp) {
         Group grp = groups.get(request.getGrp());
 
-        resp.complete(new CollectResponse(grp.getRepCntr(), clock.now()));
+        resp.complete(new CollectResponse(grp.getRepTs(), clock.now()));
     }
 
     public void visit(Snapshot snapshot, Request request, CompletableFuture<Response> resp) {
-//        Group grp = groups.get(request.getGrp());
-//
-//        resp.complete(new SnapshotResponse(clock.now(), grp.store.snapshot(snapshot.getLow(), snapshot.getHigh())));
+        Group grp = groups.get(request.getGrp());
+
+        resp.complete(new SnapshotResponse(clock.now(), new TreeMap<>(), grp.getSafeTs()));
     }
 
     private void propose(String grp, Timestamp leaseStart, Set<NodeId> members, CompletableFuture<Response> resp) {
@@ -170,8 +172,8 @@ public class Node {
 
         boolean leaseExtended = false;
 
-        if (prev != null && leaseStart.compareTo(prev.adjust(Tracker.LEASE_DURATION))
-                < 0) { // Ignore stale updates, except refresh for current leaseholder. TODO test
+        // Ignore stale updates, except refresh for current leaseholder. TODO test
+        if (prev != null && leaseStart.compareTo(prev.adjust(Tracker.LEASE_DURATION)) < 0) {
             if (!candidate.equals(group.getLeader())) {
                 resp.complete(new Response(now, 1, "Lease request ignored (wrong candidate)")); // TODO error code
                 return;
@@ -182,30 +184,36 @@ public class Node {
 
         // Skip validation if lease is extended.
         if (leaseExtended) {
+            // TODO fail if new topology doesn't contain current leader.
+
+            Request request = new Request();
+            request.setGrp(group.getName());
+            request.setTs(now);
+            request.setPayload(new LeaseGranted(group.getName(), leaseStart, group.getLeader(), members, null));
+            request.getPayload()
+                    .accept(Node.this, request, resp); // Process in-place. All subsequent repl command will be mapped on new top.
+
             // Asynchronously notify alive members.
-            for (NodeId nodeId0 : members) {
-                Request request = new Request();
-                request.setGrp(group.getName());
-                request.setTs(now);
-
-                request.setPayload(new LeaseGranted(group.getName(), leaseStart, group.getLeader(), members, group.getSafeCntr()));
-
+            for (NodeId nodeId0 : group.replicators.keySet()) {
                 if (top.getNode(nodeId0) == null) {
                     continue;
                 }
 
-                if (nodeId0.equals(candidate)) {
-                    request.getPayload()
-                            .accept(Node.this, request, resp); // Process in-place. All subsequent repl command will use higher timestamps.
-                } else {
-                    client.send(nodeId0, request);
-                }
+                Request r = new Request();
+                r.setGrp(group.getName());
+                r.setTs(now);
+                // Send safeTs only to catching up nodes.
+                boolean isStableNode = group.getMembers().contains(nodeId0);
+                r.setPayload(
+                        new LeaseGranted(group.getName(), leaseStart, group.getLeader(), members, isStableNode ? null : group.getSafeTs()));
+
+                client.send(nodeId0, r);
             }
 
             return;
         }
 
-        Map<NodeId, Long> cntrs = new ConcurrentHashMap<>();
+        Map<NodeId, Timestamp> cntrs = new ConcurrentHashMap<>();
 
         for (NodeId nodeId : members) {
             Request request = new Request();
@@ -214,23 +222,23 @@ public class Node {
             request.setPayload(new Collect());
 
             if (top.getNodeMap().get(nodeId) == null) {
-                callback(now, cntrs, nodeId, -1L, members, leaseStart, group, candidate, resp);
+                callback(now, cntrs, nodeId, Timestamp.min(), members, leaseStart, group, candidate, resp);
             } else {
                 client.send(nodeId, request).orTimeout(Replicator.TIMEOUT_SEC, TimeUnit.SECONDS).thenAccept(response -> {
                     clock.onResponse(response.getTs());
                     CollectResponse cr = (CollectResponse) response;
 
                     // TODO report cause.
-                    callback(now, cntrs, nodeId, cr.getRepCntr(), members, leaseStart, group, candidate, resp);
+                    callback(now, cntrs, nodeId, cr.getRepTs(), members, leaseStart, group, candidate, resp);
                 }).exceptionally(err -> {
-                    callback(now, cntrs, nodeId, -1L, members, leaseStart, group, candidate, resp);
+                    callback(now, cntrs, nodeId, Timestamp.min(), members, leaseStart, group, candidate, resp);
                     return null; // TODO report cause.
                 });
             }
         }
     }
 
-    private void grant(Timestamp at, String grp, Timestamp from, NodeId leaseholder, Set<NodeId> members, long maxCntr,
+    private void grant(Timestamp at, String grp, Timestamp from, NodeId leaseholder, Set<NodeId> members, @Nullable Timestamp maxTs,
             CompletableFuture<Response> resp) {
         Timestamp now = clock.now();
 
@@ -261,7 +269,7 @@ public class Node {
         assert group.validLease(from, leaseholder);
 
         // Node is up to date - move to OPERATIONAL. Skip this step if lease is refreshed.
-//        if (group.getRepCntr() == maxCntr) {
+//        if (group.getRepCntr() == maxTs) {
 //            group.state = Tracker.State.OPERATIONAL;
 //        } else {
 //            group.state = Tracker.State.CATCHINGUP;
@@ -316,23 +324,19 @@ public class Node {
                 }
             }
 
-            if (!leaseExtended) {
-                group.setRepTs(at);
-                group.setRepCntr(maxCntr);
-            }
-
             group.updateSafe();
 
             LOGGER.log(Level.INFO, "I am the leader: [interval={0}:{1}, at={2}, nodeId={3}, loc={4}, grp={5}, refresh={6}]", from,
-                    from.adjust(Tracker.LEASE_DURATION), at, nodeId, group.getRepCntr(), maxCntr, leaseExtended);
+                    from.adjust(Tracker.LEASE_DURATION), at, nodeId, group.getRepCntr(), maxTs, leaseExtended);
         } else {
             group.setState(members);
 
-            // TODO catch up.
-            long oldCntr = group.getRepCntr();
-
             LOGGER.log(Level.INFO, "Set leader: [interval={0}:{1}, at={2}], nodeId={3}, loc={4}, grp={5}, refresh={6}", from,
-                    from.adjust(Tracker.LEASE_DURATION), at, nodeId, group.getRepCntr(), maxCntr, leaseExtended);
+                    from.adjust(Tracker.LEASE_DURATION), at, nodeId, group.getRepTs(), maxTs, leaseExtended);
+
+            if (maxTs != null && maxTs.compareTo(group.getRepTs()) > 0) {
+                catchUp(grp, maxTs);
+            }
         }
 
         resp.complete(new Response(now));
@@ -451,7 +455,8 @@ public class Node {
 
                     // Don't count learners.
                     if (!stableIds.contains(id)) {
-                        LOGGER.log(Level.INFO, "Received ack from learner: cntr={0} ts={1} node={2} sucs={3} errs={4} maj={5} done={6} err={7}",
+                        LOGGER.log(Level.INFO,
+                                "Received ack from learner: cntr={0} ts={1} node={2} sucs={3} errs={4} maj={5} done={6} err={7}",
                                 inflight.getReplicate().getCntr(), inflight.ts(), id, succ.get(), errs.get(), maj, resFut.isDone(),
                                 resFut.isCompletedExceptionally());
 
@@ -492,7 +497,7 @@ public class Node {
         return group.replicators.get(id);
     }
 
-    public CompletableFuture<Void> catchUp(String grpName) {
+    public CompletableFuture<Void> catchUp(String grpName, Timestamp maxTs) {
         Group group = groups.get(grpName);
         assert group != null;
         //assert group.state == Tracker.State.CATCHINGUP;
@@ -502,31 +507,26 @@ public class Node {
             return CompletableFuture.failedFuture(new Exception("Invalid lease"));
         }
 
-        LOGGER.log(Level.INFO, "Catching up [grp={0}, missed={1}:{2}, leader={3}]", grpName, group.getRepCntr(), 0,
+        LOGGER.log(Level.INFO, "Catching up [grp={0}, missed={1}:{2}, leader={3}]", grpName, group.getRepCntr(), maxTs,
                 leaseHolder);
 
-//        Request request = new Request();
-//        request.setId(UUID.randomUUID());
-//        request.setTs(clock.now());
-//        request.setGrp(grpName);
-//        request.setPayload(new Snapshot(group.repTs, group.getActivationTs()));
-//        return client.send(leaseHolder, request).thenApply(resp -> {
-//            SnapshotResponse snapResp = (SnapshotResponse) resp;
-//
-//            VersionChainRowStore<Entry<Integer, Integer>> snapshot = snapResp.getSnapshot();
-//
-//            Timestamp old = group.repTs;
-//
-//            // TODO make async
-//            group.setSnapshot(snapshot);
-//
-//            LOGGER.log(Level.INFO, "Catch up finished [grp={0}, missed={1}:{2}, leader={3}]", grpName, old, group.getActivationTs(),
-//                    leaseHolder);
-//
-//            return null;
-//        });
+        Request request = new Request();
+        request.setTs(clock.now());
+        request.setGrp(grpName);
+        request.setPayload(new Snapshot(group.getRepTs(), maxTs));
+        return client.send(leaseHolder, request).thenApply(resp -> {
+            SnapshotResponse snapResp = (SnapshotResponse) resp;
 
-        return null;
+            TreeMap<Timestamp, Replicate> snapshot = snapResp.getSnapshot();
+
+            // TODO make async
+            group.setSnapshot(snapshot);
+
+            LOGGER.log(Level.INFO, "Catch up finished [grp={0}, missed={1}:{2}, leader={3}]", grpName, old, group.getActivationTs(),
+                    leaseHolder);
+
+            return null;
+        });
     }
 
     public static class Result {
@@ -633,7 +633,7 @@ public class Node {
 //        }
 //    }
 
-    private void callback(Timestamp now, Map<NodeId, Long> cntrs, NodeId nodeId, Long cntr, Set<NodeId> members, Timestamp from,
+    private void callback(Timestamp now, Map<NodeId, Timestamp> cntrs, NodeId nodeId, Timestamp cntr, Set<NodeId> members, Timestamp from,
             Group group, NodeId candidate, CompletableFuture<Response> resp) {
         LOGGER.log(Level.INFO, "Received response [group={0}, leaseholder={1}, cntr={2}, node={3}]", group.getName(), candidate, cntr,
                 nodeId);
@@ -661,8 +661,8 @@ public class Node {
             int succ = 0;
             int err = 0;
 
-            for (Long value : cntrs.values()) {
-                if (value != -1) {
+            for (Timestamp value : cntrs.values()) {
+                if (!value.equals(Timestamp.min())) {
                     succ++;
                 } else {
                     err++;
@@ -677,18 +677,18 @@ public class Node {
 
             // Fail attempt if can't collect enough lwms.
             if (succ >= majority) {
-                long maxCntr = 0;
+                Timestamp maxTs = Timestamp.min();
 
                 // Find max.
-                for (Long value : cntrs.values()) {
-                    if (value > maxCntr) {
-                        maxCntr = value;
+                for (Timestamp value : cntrs.values()) {
+                    if (value.compareTo(maxTs) > 0) {
+                        maxTs = value;
                     }
                 }
 
                 // Candidate must be in the max list, otherwise fail attempt.
-                for (Entry<NodeId, Long> entry0 : cntrs.entrySet()) {
-                    if (entry0.getKey() == candidate && !entry0.getValue().equals(maxCntr)) {
+                for (Entry<NodeId, Timestamp> entry0 : cntrs.entrySet()) {
+                    if (entry0.getKey() == candidate && !entry0.getValue().equals(maxTs)) {
                         resp.complete(new Response(this.clock.now(), 1, "Cannot assign leaseholder because it is not up-to-date node"));
                         return;
                     }
@@ -696,12 +696,12 @@ public class Node {
 
                 if (resp.complete(new Response(now))) {
                     LOGGER.log(Level.INFO, "Collected majority of counters: [group={0}, leaseholder={1}, max={2}]", group.getName(),
-                            candidate, maxCntr);
+                            candidate, maxTs);
                     // Asynchronously propagate the lease.
                     Request request = new Request();
                     request.setGrp(group.getName());
                     request.setTs(now);
-                    request.setPayload(new LeaseGranted(group.getName(), from, candidate, members, maxCntr));
+                    request.setPayload(new LeaseGranted(group.getName(), from, candidate, members, maxTs));
 
                     // Asynchronously notify alive members.
                     for (NodeId nodeId0 : members) {

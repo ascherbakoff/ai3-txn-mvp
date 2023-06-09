@@ -3,14 +3,14 @@ package com.ascherbakoff.ai3.replication;
 import com.ascherbakoff.ai3.clock.Timestamp;
 
 public class CollectResponse extends Response {
-    private final long repCntr;
+    private final Timestamp repTs;
 
-    public CollectResponse(long repCntr, Timestamp ts) {
+    public CollectResponse(Timestamp repTs, Timestamp ts) {
         super(ts);
-        this.repCntr = repCntr;
+        this.repTs = repTs;
     }
 
-    public long getRepCntr() {
-        return repCntr;
+    public Timestamp getRepTs() {
+        return repTs;
     }
 }

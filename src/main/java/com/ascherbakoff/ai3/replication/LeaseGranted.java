@@ -4,7 +4,6 @@ import com.ascherbakoff.ai3.clock.Timestamp;
 import com.ascherbakoff.ai3.cluster.Node;
 import com.ascherbakoff.ai3.cluster.NodeId;
 //import com.ascherbakoff.ai3.cluster.Tracker.State;
-import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import org.jetbrains.annotations.Nullable;
@@ -14,14 +13,14 @@ public class LeaseGranted implements Command {
     private final Timestamp from;
     private final NodeId candidate;
     private final Set<NodeId> members;
-    private final long repCntr;
+    private final Timestamp ts;
 
-    public LeaseGranted(String name, Timestamp from, NodeId candidate, Set<NodeId> members, long repCntr) {
+    public LeaseGranted(String name, Timestamp from, NodeId candidate, Set<NodeId> members, @Nullable Timestamp ts) {
         this.name = name;
         this.from = from;
         this.candidate = candidate;
         this.members = members;
-        this.repCntr = repCntr;
+        this.ts = ts;
     }
 
     @Override
@@ -54,7 +53,7 @@ public class LeaseGranted implements Command {
         return members;
     }
 
-    public long getRepCntr() {
-        return repCntr;
+    public @Nullable Timestamp getTs() {
+        return ts;
     }
 }
