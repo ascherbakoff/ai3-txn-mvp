@@ -4,6 +4,9 @@ import java.util.UUID;
 import org.jetbrains.annotations.Nullable;
 
 public class Timestamp implements Comparable<Timestamp> {
+    private static Timestamp MIN = new Timestamp(0, 0);
+    private static Timestamp INVALID = new Timestamp(Long.MIN_VALUE, 0);
+
     private final long physical;
 
     private final long counter;
@@ -27,7 +30,11 @@ public class Timestamp implements Comparable<Timestamp> {
     }
 
     public static Timestamp min() {
-        return new Timestamp(0, 0);
+        return MIN;
+    }
+
+    public static Timestamp invalid() {
+        return INVALID;
     }
 
     @Override

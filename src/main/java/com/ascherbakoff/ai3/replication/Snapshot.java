@@ -7,10 +7,16 @@ import java.util.concurrent.CompletableFuture;
 public class Snapshot implements Command {
     private final Timestamp low;
     private final Timestamp high;
+    private final long cntr;
 
-    public Snapshot(Timestamp low, Timestamp high) {
+    public Snapshot(long cntr, Timestamp low, Timestamp high) {
+        this.cntr = cntr;
         this.low = low;
         this.high = high;
+    }
+
+    public long getCntr() {
+        return cntr;
     }
 
     public Timestamp getLow() {

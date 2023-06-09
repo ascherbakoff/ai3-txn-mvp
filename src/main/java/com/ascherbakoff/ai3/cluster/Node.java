@@ -23,8 +23,8 @@ import java.util.HashSet;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.Map.Entry;
+import java.util.NavigableMap;
 import java.util.Set;
-import java.util.TreeMap;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
@@ -149,9 +149,17 @@ public class Node {
     }
 
     public void visit(Snapshot snapshot, Request request, CompletableFuture<Response> resp) {
+        // TODO validate request from the same epoch.
         Group grp = groups.get(request.getGrp());
+        boolean catchedUp = false;
+        if (snapshot.getCntr() >= grp.getSafeCntr()) {
+            catchedUp = true;
+            // Move to operational.
+            assert grp.replicators.containsKey(request.getSender());
+            grp.addMember(request.getSender());
+        }
 
-        resp.complete(new SnapshotResponse(clock.now(), new TreeMap<>(), grp.getSafeTs()));
+        resp.complete(new SnapshotResponse(clock.now(), grp.snapshot(snapshot.getLow(), snapshot.getHigh()), catchedUp ? null : grp.getSafeTs()));
     }
 
     private void propose(String grp, Timestamp leaseStart, Set<NodeId> members, CompletableFuture<Response> resp) {
@@ -222,7 +230,7 @@ public class Node {
             request.setPayload(new Collect());
 
             if (top.getNodeMap().get(nodeId) == null) {
-                callback(now, cntrs, nodeId, Timestamp.min(), members, leaseStart, group, candidate, resp);
+                callback(now, cntrs, nodeId, Timestamp.invalid(), members, leaseStart, group, candidate, resp);
             } else {
                 client.send(nodeId, request).orTimeout(Replicator.TIMEOUT_SEC, TimeUnit.SECONDS).thenAccept(response -> {
                     clock.onResponse(response.getTs());
@@ -231,7 +239,7 @@ public class Node {
                     // TODO report cause.
                     callback(now, cntrs, nodeId, cr.getRepTs(), members, leaseStart, group, candidate, resp);
                 }).exceptionally(err -> {
-                    callback(now, cntrs, nodeId, Timestamp.min(), members, leaseStart, group, candidate, resp);
+                    callback(now, cntrs, nodeId, Timestamp.invalid(), members, leaseStart, group, candidate, resp);
                     return null; // TODO report cause.
                 });
             }
@@ -507,26 +515,29 @@ public class Node {
             return CompletableFuture.failedFuture(new Exception("Invalid lease"));
         }
 
-        LOGGER.log(Level.INFO, "Catching up [grp={0}, missed={1}:{2}, leader={3}]", grpName, group.getRepCntr(), maxTs,
+        LOGGER.log(Level.INFO, "Catching up [grp={0}, missed={1}:{2}, leader={3}]", grpName, group.getRepTs(), maxTs,
                 leaseHolder);
 
         Request request = new Request();
+        request.setSender(nodeId);
         request.setTs(clock.now());
         request.setGrp(grpName);
-        request.setPayload(new Snapshot(group.getRepTs(), maxTs));
-        return client.send(leaseHolder, request).thenApply(resp -> {
+        request.setPayload(new Snapshot(group.getRepCntr(), group.getRepTs(), maxTs));
+        return client.send(leaseHolder, request).thenAcceptAsync(resp -> {
             SnapshotResponse snapResp = (SnapshotResponse) resp;
 
-            TreeMap<Timestamp, Replicate> snapshot = snapResp.getSnapshot();
+            NavigableMap<Timestamp, Replicate> snapshot = snapResp.getSnapshot();
 
             // TODO make async
             group.setSnapshot(snapshot);
 
-            LOGGER.log(Level.INFO, "Catch up finished [grp={0}, missed={1}:{2}, leader={3}]", grpName, old, group.getActivationTs(),
-                    leaseHolder);
+            LOGGER.log(Level.INFO, "Loaded delta snapshot [grp={0}, missed={1}:{2}, next={3}, leader={4}]", grpName, group.getRepTs(),
+                    maxTs, snapResp.getCurrent(), leaseHolder);
 
-            return null;
-        });
+            if (snapResp.getCurrent() != null) {
+                catchUp(grpName, snapResp.getCurrent());
+            }
+        }, group.executorService);
     }
 
     public static class Result {
@@ -662,7 +673,7 @@ public class Node {
             int err = 0;
 
             for (Timestamp value : cntrs.values()) {
-                if (!value.equals(Timestamp.min())) {
+                if (!value.equals(Timestamp.invalid())) {
                     succ++;
                 } else {
                     err++;

@@ -535,6 +535,10 @@ public class ReplicationGroup2NodesTest extends BasicReplicationTest {
 
         waitReplication();
 
+        assertTrue(waitForCondition(() -> {
+            return leader.group(GRP_NAME).getMembers().size() == 2;
+        }, 1_000));
+
         System.out.println();
     }
 //

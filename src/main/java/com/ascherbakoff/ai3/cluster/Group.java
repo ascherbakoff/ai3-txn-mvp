@@ -12,6 +12,7 @@ import java.util.HashSet;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.Map.Entry;
+import java.util.NavigableMap;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.concurrent.ExecutorService;
@@ -265,7 +266,19 @@ public class Group {
         repTs = safeTs = Timestamp.min();
     }
 
-    public void setSnapshot(TreeMap<Timestamp, Replicate> snapshot) {
-        // TODO
+    public void setSnapshot(NavigableMap<Timestamp, Replicate> snapshot) {
+        for (Entry<Timestamp, Replicate> entry : snapshot.entrySet()) {
+            accept(entry.getKey(), entry.getValue(), false);
+        }
+    }
+
+    public void addMember(NodeId sender) {
+        boolean added = members.add(sender);
+
+        assert added : "Must not be stable node";
+    }
+
+    public NavigableMap<Timestamp, Replicate> snapshot(Timestamp low, Timestamp high) {
+        return new TreeMap(snapIdx.subMap(low, false, high, true));
     }
 }
