@@ -16,7 +16,7 @@ import com.ascherbakoff.ai3.replication.Response;
 import com.ascherbakoff.ai3.replication.RpcClient;
 import com.ascherbakoff.ai3.replication.Snapshot;
 import com.ascherbakoff.ai3.replication.SnapshotResponse;
-import com.ascherbakoff.ai3.replication.Sync;
+import com.ascherbakoff.ai3.replication.IdleSync;
 import java.lang.System.Logger.Level;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -134,10 +134,10 @@ public class Node {
         propose(lease.name(), lease.from(), lease.members(), resp);
     }
 
-    public void visit(Sync sync, Request request, CompletableFuture<Response> resp) {
+    public void visit(IdleSync idleSync, Request request, CompletableFuture<Response> resp) {
         Group grp = groups.get(request.getGrp());
         // TODO fail if grp null.
-        grp.setIdle(sync.getTimestamp());
+        grp.setIdle(idleSync.getTimestamp());
 
         resp.complete(new Response(clock.now()));
     }
@@ -615,7 +615,7 @@ public class Node {
                     r.setSender(nodeId);
                     r.setGrp(grp);
                     r.setTs(now); // Propagate ts in idle sync.
-                    r.setPayload(new Sync(now)); // TODO remove
+                    r.setPayload(new IdleSync(now)); // TODO remove
 
                     // TODO needs timeout - not all nodes can respond.
                     replicator.idleSync(r);

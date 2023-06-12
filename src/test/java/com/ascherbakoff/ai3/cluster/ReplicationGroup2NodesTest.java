@@ -16,9 +16,6 @@ import com.ascherbakoff.ai3.replication.Inflight;
 import com.ascherbakoff.ai3.replication.Request;
 import java.lang.System.Logger.Level;
 import java.util.ArrayList;
-import java.util.HashSet;
-import java.util.Set;
-import java.util.TreeMap;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.CountDownLatch;
@@ -26,7 +23,6 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.locks.LockSupport;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -179,11 +175,11 @@ public class ReplicationGroup2NodesTest extends BasicReplicationTest {
 
         waitReplication();
 
-        TreeMap<Timestamp, Replicate> snapIdx = leader.group(GRP_NAME).snapIdx;
-        TreeMap<Timestamp, Replicate> snapIdx2 = top.getNode(bob).group(GRP_NAME).snapIdx;
+        SnapStore snapIdx = leader.group(GRP_NAME).snapStore;
+        SnapStore snapIdx2 = top.getNode(bob).group(GRP_NAME).snapStore;
 
-        assertEquals(msgCntr, snapIdx.size());
-        assertEquals(snapIdx, snapIdx2);;
+        assertEquals(msgCntr, snapIdx.logSize());
+        assertEquals(snapIdx, snapIdx2);
     }
 //
 //    @Test

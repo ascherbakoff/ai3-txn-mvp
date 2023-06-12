@@ -8,15 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.ascherbakoff.ai3.clock.Timestamp;
 import com.ascherbakoff.ai3.replication.Put;
-import com.ascherbakoff.ai3.replication.Replicate;
-import com.ascherbakoff.ai3.replication.Replicator;
-import com.ascherbakoff.ai3.replication.Inflight;
-import com.ascherbakoff.ai3.replication.Request;
 import java.lang.System.Logger.Level;
-import java.util.Set;
-import java.util.TreeMap;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CompletionException;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executor;
@@ -138,11 +130,11 @@ public class ReplicationGroup3NodesTest extends BasicReplicationTest {
 
         waitFullReplication();
 
-        TreeMap<Timestamp, Replicate> snapIdx = leader.group(GRP_NAME).snapIdx;
-        TreeMap<Timestamp, Replicate> snapIdx2 = top.getNode(bob).group(GRP_NAME).snapIdx;
-        TreeMap<Timestamp, Replicate> snapIdx3 = top.getNode(charlie).group(GRP_NAME).snapIdx;
+        SnapStore snapIdx = leader.group(GRP_NAME).snapStore;
+        SnapStore snapIdx2 = top.getNode(bob).group(GRP_NAME).snapStore;
+        SnapStore snapIdx3 = top.getNode(charlie).group(GRP_NAME).snapStore;
 
-        assertEquals(msgCntr, snapIdx.size());
+        assertEquals(msgCntr, snapIdx.logSize());
         assertEquals(snapIdx, snapIdx2);
         assertEquals(snapIdx2, snapIdx3);
     }

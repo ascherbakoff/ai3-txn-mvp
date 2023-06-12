@@ -2,7 +2,6 @@ package com.ascherbakoff.ai3.replication;
 
 import com.ascherbakoff.ai3.clock.Timestamp;
 import java.util.NavigableMap;
-import java.util.TreeMap;
 import org.jetbrains.annotations.Nullable;
 
 public class SnapshotResponse extends Response {
@@ -12,7 +11,7 @@ public class SnapshotResponse extends Response {
     /**
      * Null "current" means a stable replication.
      */
-    public SnapshotResponse(Timestamp hlc, NavigableMap<Timestamp, Replicate> snapshot, Timestamp current) {
+    public SnapshotResponse(Timestamp hlc, NavigableMap<Timestamp, Replicate> snapshot, @Nullable Timestamp current) {
         super(hlc);
         this.snapshot = snapshot;
         this.current = current;

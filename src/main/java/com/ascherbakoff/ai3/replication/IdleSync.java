@@ -4,10 +4,10 @@ import com.ascherbakoff.ai3.clock.Timestamp;
 import com.ascherbakoff.ai3.cluster.Node;
 import java.util.concurrent.CompletableFuture;
 
-public class Sync implements Command {
+public class IdleSync implements Command {
     private Timestamp timestamp;
 
-    public Sync(Timestamp timestamp) {
+    public IdleSync(Timestamp timestamp) {
         this.timestamp = timestamp;
     }
 

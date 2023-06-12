@@ -5,7 +5,6 @@ import com.ascherbakoff.ai3.cluster.Node;
 import com.ascherbakoff.ai3.cluster.NodeId;
 import com.ascherbakoff.ai3.cluster.Topology;
 import java.lang.System.Logger.Level;
-import java.sql.Time;
 import java.util.Iterator;
 import java.util.Map.Entry;
 import java.util.Set;
@@ -25,9 +24,9 @@ public class Replicator {
 
     private final String grp;
 
-    private NodeId nodeId;
+    private final NodeId nodeId;
 
-    private Topology topology;
+    private final Topology topology;
 
     private long repCntr = 0;
 
@@ -52,7 +51,7 @@ public class Replicator {
 
         if (broken) {
             Inflight inflight = new Inflight(request.getTs(), payload, new CompletableFuture<>());
-            inflight.ioFuture().completeExceptionally(new Exception("Broken pipe"));
+            inflight.ioFuture().completeExceptionally(new ReplicationException("Broken pipe"));
             return inflight;
         }
 
@@ -135,7 +134,7 @@ public class Replicator {
 
     public void failInflights() {
         for (Inflight value : inflights.values()) {
-            value.ioFuture().completeExceptionally(new Exception("Replicator removed"));
+            value.ioFuture().completeExceptionally(new ReplicationException("Replicator removed"));
         }
     }
 

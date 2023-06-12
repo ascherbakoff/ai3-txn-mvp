@@ -40,8 +40,8 @@ public class Group {
     // Replica inflights (used by replica).
     private TreeMap<Long, Inflight> repInflights = new TreeMap<Long, Inflight>();
 
-    // Snap index. TODO compaction.
-    TreeMap<Timestamp, Replicate> snapIdx = new TreeMap<Timestamp, Replicate>();
+    // Snapshot store. TODO make pluggable.
+    SnapStore snapStore = new LogSnapStore(false);
 
     // Maintained on a leader.
     // TODO rename safe <-> rep
@@ -158,10 +158,9 @@ public class Group {
         // Track out of order updates on replica.
         Inflight inflight = new Inflight(repTs, replicate, null);
 
-        snapIdx.put(repTs, replicate);
-
         if (local) {
             setRepTs(repTs); // Counter is already updated in the caller.
+            snapStore.put(repTs, replicate); // Apply
             return;
         }
 
@@ -177,6 +176,7 @@ public class Group {
 
             if (repCntr + 1 == entry.getKey()) {
                 setRepTs(entry.getValue().ts());
+                snapStore.put(this.repTs, replicate); // Apply
                 iter.remove();
                 repCntr++;
             }
@@ -279,6 +279,6 @@ public class Group {
     }
 
     public NavigableMap<Timestamp, Replicate> snapshot(Timestamp low, Timestamp high) {
-        return new TreeMap(snapIdx.subMap(low, false, high, true));
+        return snapStore.snapshot(low, high);
     }
 }
