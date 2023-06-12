@@ -6,13 +6,12 @@ import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.junit.jupiter.api.Assertions.fail;
 
 import com.ascherbakoff.ai3.clock.Timestamp;
+import com.ascherbakoff.ai3.replication.Inflight;
 import com.ascherbakoff.ai3.replication.Put;
 import com.ascherbakoff.ai3.replication.Replicate;
 import com.ascherbakoff.ai3.replication.Replicator;
-import com.ascherbakoff.ai3.replication.Inflight;
 import com.ascherbakoff.ai3.replication.Request;
 import java.lang.System.Logger.Level;
 import java.util.ArrayList;
@@ -516,6 +515,7 @@ public class ReplicationGroup2NodesTest extends BasicReplicationTest {
 
         assertTrue(leader.group(GRP_NAME).replicators.get(bob) == null); // Replicator should be removed on node removal.
 
+        // Replicate while other node is offline.
         val++;
         leader.replicate(GRP_NAME, new Put(val, val)).join();
         waitReplication();
@@ -528,14 +528,17 @@ public class ReplicationGroup2NodesTest extends BasicReplicationTest {
 
         val++;
         leader.replicate(GRP_NAME, new Put(val, val)).join();
-
         waitReplication();
 
         assertTrue(waitForCondition(() -> {
             return leader.group(GRP_NAME).getMembers().size() == 2;
         }, 1_000));
 
-        System.out.println();
+        SnapStore snapIdx = leader.group(GRP_NAME).snapStore;
+        SnapStore snapIdx2 = top.getNode(bob).group(GRP_NAME).snapStore;
+
+        assertEquals(val + 1, snapIdx.logSize());
+        assertEquals(snapIdx, snapIdx2);
     }
 //
 //    /**

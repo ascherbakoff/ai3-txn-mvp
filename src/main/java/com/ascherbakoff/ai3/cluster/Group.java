@@ -176,7 +176,7 @@ public class Group {
 
             if (repCntr + 1 == entry.getKey()) {
                 setRepTs(entry.getValue().ts());
-                snapStore.put(this.repTs, replicate); // Apply
+                snapStore.put(this.repTs, entry.getValue().getReplicate()); // Apply
                 iter.remove();
                 repCntr++;
             }

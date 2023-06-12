@@ -1,10 +1,6 @@
 package com.ascherbakoff.ai3.cluster;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.ascherbakoff.ai3.clock.Timestamp;
 import com.ascherbakoff.ai3.replication.Put;
@@ -128,7 +124,7 @@ public class ReplicationGroup3NodesTest extends BasicReplicationTest {
 
         LOGGER.log(Level.INFO, "Finished sending messages, duration {0}ms", (System.nanoTime() - ts) / 1000 / 1000.);
 
-        waitFullReplication();
+        waitReplication();
 
         SnapStore snapIdx = leader.group(GRP_NAME).snapStore;
         SnapStore snapIdx2 = top.getNode(bob).group(GRP_NAME).snapStore;

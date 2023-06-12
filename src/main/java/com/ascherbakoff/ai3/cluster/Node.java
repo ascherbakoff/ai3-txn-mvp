@@ -531,8 +531,8 @@ public class Node {
             // TODO make async
             group.setSnapshot(snapshot);
 
-            LOGGER.log(Level.INFO, "Loaded delta snapshot [grp={0}, missed={1}:{2}, next={3}, leader={4}, node={5}]", grpName, group.getRepTs(),
-                    maxTs, snapResp.getCurrent(), leaseHolder, nodeId);
+            LOGGER.log(Level.INFO, "Loaded delta snapshot [grp={0}, current={1}, next={2}, leader={3}, node={4}]", grpName, group.getRepTs(),
+                    snapResp.getCurrent(), leaseHolder, nodeId);
 
             if (snapResp.getCurrent() != null) {
                 catchUp(grpName, snapResp.getCurrent());
