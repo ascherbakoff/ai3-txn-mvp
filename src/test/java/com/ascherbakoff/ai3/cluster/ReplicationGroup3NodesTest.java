@@ -126,13 +126,12 @@ public class ReplicationGroup3NodesTest extends BasicReplicationTest {
 
         waitReplication();
 
-        SnapStore snapIdx = leader.group(GRP_NAME).snapStore;
-        SnapStore snapIdx2 = top.getNode(bob).group(GRP_NAME).snapStore;
-        SnapStore snapIdx3 = top.getNode(charlie).group(GRP_NAME).snapStore;
+        DeltaStore store = leader.group(GRP_NAME).deltaStore;
+        DeltaStore store2 = top.getNode(bob).group(GRP_NAME).deltaStore;
+        DeltaStore store3 = top.getNode(charlie).group(GRP_NAME).deltaStore;
 
-        assertEquals(msgCntr, snapIdx.logSize());
-        assertEquals(snapIdx, snapIdx2);
-        assertEquals(snapIdx2, snapIdx3);
+        assertEquals(store, store2);
+        assertEquals(store2, store3);
     }
 
 //

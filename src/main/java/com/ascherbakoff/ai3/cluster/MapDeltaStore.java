@@ -5,8 +5,8 @@ import com.ascherbakoff.ai3.replication.Replicate;
 import java.util.NavigableMap;
 import java.util.TreeMap;
 
-public class LogSnapStore implements SnapStore {
-    public LogSnapStore(boolean compaction) {
+public class MapDeltaStore implements DeltaStore {
+    public MapDeltaStore(boolean compaction) {
         // TODO compaction
         assert !compaction;
     }
@@ -22,6 +22,11 @@ public class LogSnapStore implements SnapStore {
     @Override
     public NavigableMap<Timestamp, Replicate> snapshot(Timestamp low, Timestamp high) {
         return new TreeMap(log.subMap(low, false, high, true));
+    }
+
+    @Override
+    public void compact(Timestamp compactTs) {
+        // TODO
     }
 
     @Override
@@ -43,7 +48,7 @@ public class LogSnapStore implements SnapStore {
             return false;
         }
 
-        LogSnapStore snapStore = (LogSnapStore) o;
+        MapDeltaStore snapStore = (MapDeltaStore) o;
 
         if (!log.equals(snapStore.log)) {
             return false;

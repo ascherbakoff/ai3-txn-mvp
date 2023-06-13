@@ -5,16 +5,14 @@ import com.ascherbakoff.ai3.replication.Replicate;
 import java.util.NavigableMap;
 
 /**
- * An abstraction for storing replicated data in the snapshot + log form.
- * Snapshot represents a compacted log prefix up to compactTs.
- * Used for delta snapshot supporting.
+ * An abstraction for storing replicated data with delta snap support.
  */
-public interface SnapStore {
+public interface DeltaStore {
     void put(Timestamp repTs, Replicate replicate);
 
     NavigableMap<Timestamp, Replicate> snapshot(Timestamp low, Timestamp high);
 
-    Timestamp compactTs();
+    void compact(Timestamp compactTs);
 
-    int logSize();
+    Timestamp compactTs();
 }

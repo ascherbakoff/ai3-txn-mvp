@@ -41,7 +41,7 @@ public class Group {
     private TreeMap<Long, Inflight> repInflights = new TreeMap<Long, Inflight>();
 
     // Snapshot store. TODO make pluggable.
-    SnapStore snapStore = new LogSnapStore(false);
+    DeltaStore deltaStore = new MapDeltaStore(false);
 
     // Maintained on a leader.
     // TODO rename safe <-> rep
@@ -160,7 +160,7 @@ public class Group {
 
         if (local) {
             setRepTs(repTs); // Counter is already updated in the caller.
-            snapStore.put(repTs, replicate); // Apply
+            deltaStore.put(repTs, replicate); // Apply
             return;
         }
 
@@ -176,7 +176,7 @@ public class Group {
 
             if (repCntr + 1 == entry.getKey()) {
                 setRepTs(entry.getValue().ts());
-                snapStore.put(this.repTs, entry.getValue().getReplicate()); // Apply
+                deltaStore.put(this.repTs, entry.getValue().getReplicate()); // Apply
                 iter.remove();
                 repCntr++;
             }
@@ -279,6 +279,6 @@ public class Group {
     }
 
     public NavigableMap<Timestamp, Replicate> snapshot(Timestamp low, Timestamp high) {
-        return snapStore.snapshot(low, high);
+        return deltaStore.snapshot(low, high);
     }
 }

@@ -174,11 +174,10 @@ public class ReplicationGroup2NodesTest extends BasicReplicationTest {
 
         waitReplication();
 
-        SnapStore snapIdx = leader.group(GRP_NAME).snapStore;
-        SnapStore snapIdx2 = top.getNode(bob).group(GRP_NAME).snapStore;
+        DeltaStore store = leader.group(GRP_NAME).deltaStore;
+        DeltaStore store2 = top.getNode(bob).group(GRP_NAME).deltaStore;
 
-        assertEquals(msgCntr, snapIdx.logSize());
-        assertEquals(snapIdx, snapIdx2);
+        assertEquals(store, store2);
     }
 //
 //    @Test
@@ -534,11 +533,11 @@ public class ReplicationGroup2NodesTest extends BasicReplicationTest {
             return leader.group(GRP_NAME).getMembers().size() == 2;
         }, 1_000));
 
-        SnapStore snapIdx = leader.group(GRP_NAME).snapStore;
-        SnapStore snapIdx2 = top.getNode(bob).group(GRP_NAME).snapStore;
+        DeltaStore store = leader.group(GRP_NAME).deltaStore;
+        DeltaStore store2 = top.getNode(bob).group(GRP_NAME).deltaStore;
 
-        assertEquals(val + 1, snapIdx.logSize());
-        assertEquals(snapIdx, snapIdx2);
+        // assertEquals(val + 1, snapIdx.logSize());
+        assertEquals(store, store2);
     }
 //
 //    /**
